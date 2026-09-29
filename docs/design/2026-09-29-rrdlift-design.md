@@ -170,6 +170,10 @@ With default RRAs one data source yields 2016 + 1320 + 304 = 3,640 samples.
 4. **Orphan:** no source. Written with minimal labels `__name__`, `resourceId`, `mtype`, or skipped with `--skip-orphans`.
    Also written to `orphans.txt` as input for `opennms:tss-export-labels`.
 
+`plan` also writes `not-migrated.txt` (`--not-migrated`).
+It has one tab-separated line per entry that will not be written: class, resourceId or file, data source name, note.
+The lines are sorted, after a header line `# class\tresource\tds\tnote` (tab-separated).
+
 A matched or exported label set whose `mtype` label differs from the data source type (`count` for COUNTER and DERIVE, `gauge` for GAUGE) is not written.
 The entry is classed `MTYPE_MISMATCH` and listed.
 
@@ -239,9 +243,18 @@ Pass 2 starts after pass 1 has finished for every file.
   The error that storage precision puts on a delta scales with the counter value, not with the delta.
 - VictoriaMetrics keeps about 12 significant digits, so verify it with `--tolerance 1e-11`.
 - Default selection: 1% random files plus every file that needed a retry.
-- Reports totals, done, failed, orphans, ambiguous, mismatches.
+- Before the sample check, verify compares the checkpoint with the plan.
+  It reports how many writable files are done in both passes and lists up to 20 that are not.
+  A file is not done when its last checkpoint line in either pass is missing or FAILED.
+- It also prints the plan's not-migrated entries per class under `NOT MIGRATED (by plan):`.
+  These do not change the exit code.
+- Exit 1 on any mismatch or any file not done, otherwise 0.
 
-Cutover is complete when every file is done or listed as an accepted failure, and verify reports zero mismatches.
+`backfill` reports the same totals from the checkpoint after every run that is not paused.
+It exits 1 while any writable file is not done in both passes, also on a rerun that had nothing to do.
+
+Cutover is complete when verify exits 0.
+Review `not-migrated.txt` before deleting `share/rrd`, because nothing listed there is in the backend.
 
 ## CLI summary
 

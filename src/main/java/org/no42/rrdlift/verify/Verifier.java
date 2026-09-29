@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import org.no42.rrdlift.backfill.Checkpoint;
+import org.no42.rrdlift.plan.EntryClass;
 import org.no42.rrdlift.plan.Plan;
 import org.no42.rrdlift.plan.PlanEntry;
 import org.no42.rrdlift.prom.PromClient;
@@ -33,6 +35,12 @@ public final class Verifier {
 
     public record Report(int files, int series, long samples, List<Mismatch> mismatches) {}
 
+    /**
+     * Checkpoint state against the plan. {@code notDone} lists the writable files that are not DONE in both passes,
+     * sorted; {@code notMigrated} counts the plan entries without labels per class.
+     */
+    public record Completeness(int writableFiles, List<String> notDone, Map<EntryClass, Integer> notMigrated) {}
+
     private final PromClient client;
     private final RrdOpener opener;
     private final double tolerance;
@@ -41,6 +49,24 @@ public final class Verifier {
         this.client = client;
         this.opener = opener;
         this.tolerance = tolerance;
+    }
+
+    public static Completeness completeness(Plan plan, Checkpoint checkpoint) throws IOException {
+        Map<String, Checkpoint.Entry> recent = checkpoint.load(Pass.RECENT.name());
+        Map<String, Checkpoint.Entry> older = checkpoint.load(Pass.OLDER.name());
+        Set<String> files = plan.writableByFile().keySet();
+        List<String> notDone = files.stream().filter(f -> !done(recent.get(f)) || !done(older.get(f))).sorted().toList();
+        Map<EntryClass, Integer> notMigrated = new EnumMap<>(EntryClass.class);
+        for (PlanEntry e : plan.entries()) {
+            if (e.labels() == null) {
+                notMigrated.merge(e.entryClass(), 1, Integer::sum);
+            }
+        }
+        return new Completeness(files.size(), notDone, notMigrated);
+    }
+
+    private static boolean done(Checkpoint.Entry e) {
+        return e != null && e.status() == Checkpoint.Status.DONE;
     }
 
     public static List<String> select(Plan plan, Checkpoint checkpoint, boolean all, double percent, long seed)

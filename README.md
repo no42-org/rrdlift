@@ -51,12 +51,16 @@ The backend must accept such out-of-order samples as far back as your oldest RRD
    `ORPHAN` data sources have no live series and get the minimal labels `__name__`, `resourceId`, `mtype`.
    Pass `--skip-orphans` to leave them out.
    `AMBIGUOUS` data sources match more than one live series and are skipped.
+   `MTYPE_MISMATCH` data sources match a live series whose `mtype` label contradicts the RRD data source type, and are skipped.
+   `not-migrated.txt` lists every data source or file that will not be written, with its class and the reason.
 6. Backfill; rerun the same command to resume after an interruption:
    ```
    rrdlift backfill --plan plan.json --write-url http://prometheus:9090/api/v1/write --rate 20000
    ```
-   Exit code 0 means done.
-   Exit code 1 means some files failed or the run aborted on a local error such as an unwritable state directory.
+   After each run backfill reports how many planned files are done in both passes, counted from the checkpoint.
+   Exit code 0 means every planned file is done in both passes.
+   Exit code 1 means some files are not done yet, or the run aborted on a local error such as an unwritable state directory.
+   A plain rerun does not retry failed files and still exits 1.
    Use `--retry-failed` to retry the failed files.
    Exit code 2 means paused because the backend was unavailable.
    Every command exits 64 on invalid options.
@@ -64,11 +68,19 @@ The backend must accept such out-of-order samples as far back as your oldest RRD
    ```
    rrdlift verify --plan plan.json --read-url http://prometheus:9090
    ```
+   Verify first reports how many planned files are done in both passes and lists up to 20 that are not.
+   It then prints the not-migrated counts per class under `NOT MIGRATED (by plan):`.
+   Then it reads a sample of files back and compares them.
+   It exits 1 on any mismatch or any file not done, and 0 otherwise.
+   Not-migrated entries do not change the exit code.
+   Verify compares the backend with rrdlift's own sample generator, not with an independent reconstruction of the RRD files.
    `--tolerance` is relative.
    For counters the allowed delta error is the tolerance times the counter value.
    VictoriaMetrics needs `--tolerance 1e-11`.
-8. Run `rrdlift verify --plan plan.json --read-url http://prometheus:9090 --all` and check that it reports zero mismatches before archiving or deleting `share/rrd`.
+8. Run `rrdlift verify --plan plan.json --read-url http://prometheus:9090 --all`.
+   Cutover is complete when it exits 0.
    By default verify samples only 1% of files plus every file that needed a retry.
+   Review `not-migrated.txt` before archiving or deleting `share/rrd`, because nothing listed there is in the backend.
    Until then `share/rrd` is your rollback path.
 
 ## Build

@@ -15,7 +15,8 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 
 @Command(name = "verify", mixinStandardHelpOptions = true,
-        description = "Reads backfilled history back and compares it with the RRD files. Exit 1 on any mismatch.")
+        description = "Checks that every planned file is backfilled and compares a sample with the RRD files. "
+                + "Exit 1 on any mismatch or any file not done.")
 public final class VerifyCommand implements Callable<Integer> {
 
     private static final int USAGE = 64;
@@ -52,14 +53,28 @@ public final class VerifyCommand implements Callable<Integer> {
         }
         try {
             Plan p = Plan.load(plan);
-            List<String> files = Verifier.select(p, new Checkpoint(stateDir), all, percent, seed);
+            Checkpoint checkpoint = new Checkpoint(stateDir);
+            Verifier.Completeness c = Verifier.completeness(p, checkpoint);
+            System.out.printf("verify: %d files planned, %d done in both passes, %d not done%n",
+                    c.writableFiles(), c.writableFiles() - c.notDone().size(), c.notDone().size());
+            c.notDone().stream().limit(20).forEach(f -> System.out.println("NOT DONE " + f));
+            if (c.notDone().size() > 20) {
+                System.out.printf("... and %d more; rerun backfill, with --retry-failed for failed files%n",
+                        c.notDone().size() - 20);
+            }
+            if (!c.notMigrated().isEmpty()) {
+                System.out.println("NOT MIGRATED (by plan):");
+                c.notMigrated().forEach((cls, n) -> System.out.printf("  %s %d%n", cls, n));
+                System.out.println("  see not-migrated.txt from plan for the list");
+            }
+            List<String> files = Verifier.select(p, checkpoint, all, percent, seed);
             Verifier.Report r = new Verifier(connection.client(), readerOptions.opener(), tolerance).verify(p, files);
             r.mismatches().stream().limit(20).forEach(m -> System.out.printf(
                     "MISMATCH %s %s at %d: %s expected=%s actual=%s%n",
                     m.file(), m.dsName(), m.timeMs(), m.kind(), m.expected(), m.actual()));
             System.out.printf("verify: %d files, %d series, %d samples, %d mismatches%n",
                     r.files(), r.series(), r.samples(), r.mismatches().size());
-            return r.mismatches().isEmpty() ? 0 : 1;
+            return r.mismatches().isEmpty() && c.notDone().isEmpty() ? 0 : 1;
         } catch (Exception e) {
             System.err.println("verify: " + e.getMessage());
             return 1;
