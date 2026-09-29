@@ -57,10 +57,18 @@ public final class NativeRrdtoolReader {
     }
 
     private static RrdFile parse(ByteBuffer b, int p, String version, Path file) throws IOException {
-        int ds = (int) b.getLong(p);
-        int rra = (int) b.getLong(p + 8);
+        long dsCount = b.getLong(p);
+        long rraCount = b.getLong(p + 8);
         long step = b.getLong(p + 16);
         p += 24 + PAR_BYTES;
+        long cap = b.capacity();
+        if (dsCount < 0 || rraCount < 0 || dsCount > cap / 120 || rraCount > cap / 120
+                || p + dsCount * 120 + rraCount * 120 + 16 + dsCount * 112 + rraCount * dsCount * PAR_BYTES
+                        + rraCount * 8 > cap) {
+            throw countsDoNotFit(file);
+        }
+        int ds = (int) dsCount;
+        int rra = (int) rraCount;
 
         String[] name = new String[ds];
         String[] type = new String[ds];
@@ -88,6 +96,21 @@ public final class NativeRrdtoolReader {
             pdpCnt[i] = b.getLong(q + 8);
             xff[i] = b.getDouble(q + 16);
             p = q + 16 + PAR_BYTES;
+        }
+        long rowsStart = (long) p + 16 + (long) ds * 112 + (long) rra * ds * PAR_BYTES + (long) rra * 8;
+        long totalRows = 0;
+        for (long n : rowCnt) {
+            if (n < 0 || n > Integer.MAX_VALUE) {
+                throw countsDoNotFit(file);
+            }
+            totalRows += n;
+        }
+        try {
+            if (Math.addExact(rowsStart, Math.multiplyExact(totalRows, (long) ds * 8)) > cap) {
+                throw countsDoNotFit(file);
+            }
+        } catch (ArithmeticException e) {
+            throw countsDoNotFit(file);
         }
 
         long lastUpdate = b.getLong(p);
@@ -133,6 +156,10 @@ public final class NativeRrdtoolReader {
             throw new IOException(file + ": parsed " + p + " of " + b.capacity() + " bytes");
         }
         return new RrdFile(version, step, lastUpdate, List.copyOf(dataSources), List.copyOf(archives));
+    }
+
+    private static IOException countsDoNotFit(Path file) {
+        return new IOException(file + ": header counts do not fit the file size");
     }
 
     private static int align(int pos, int a) {

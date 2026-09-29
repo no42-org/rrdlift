@@ -9,6 +9,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -115,5 +117,42 @@ class NativeRrdtoolReaderTest {
         assertThatThrownBy(() -> NativeRrdtoolReader.read(be))
                 .isInstanceOf(UnsupportedLayoutException.class)
                 .hasMessageContaining("BIG_ENDIAN");
+    }
+
+    static Path patchLong(Path tmp, String fixture, int offset, long value) throws IOException {
+        byte[] bytes = Files.readAllBytes(Fixtures.path("aarch64", fixture));
+        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).putLong(offset, value);
+        Path out = tmp.resolve("patched-" + offset + ".rrd");
+        Files.write(out, bytes);
+        return out;
+    }
+
+    @Test
+    void rejectsHugeDataSourceCountWithoutAllocating(@TempDir Path tmp) throws IOException {
+        Path file = patchLong(tmp, "icmp.rrd", 24, 1L << 40);
+        assertThatThrownBy(() -> NativeRrdtoolReader.read(file))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("header counts do not fit the file size");
+    }
+
+    @Test
+    void rejectsNegativeDataSourceCount(@TempDir Path tmp) throws IOException {
+        Path file = patchLong(tmp, "icmp.rrd", 24, -1L);
+        assertThatThrownBy(() -> NativeRrdtoolReader.read(file))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("header counts do not fit the file size");
+    }
+
+    @Test
+    void rejectsHugeRowCountWithoutAllocating(@TempDir Path tmp) throws IOException {
+        byte[] bytes = Files.readAllBytes(Fixtures.path("aarch64", "grp.rrd"));
+        long ds = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).getLong(24);
+        int firstRowCnt = (int) (128 + ds * 120 + 24); // header, ds defs, cf_nam[20] + 4 padding
+        for (long rows : new long[] {Integer.MAX_VALUE, 1L << 40, -5}) {
+            Path file = patchLong(tmp, "grp.rrd", firstRowCnt, rows);
+            assertThatThrownBy(() -> NativeRrdtoolReader.read(file)).as("row count %d", rows)
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining("header counts do not fit the file size");
+        }
     }
 }
