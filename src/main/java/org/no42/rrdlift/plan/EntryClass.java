@@ -4,4 +4,4 @@
  */
 package org.no42.rrdlift.plan;
 
-public enum EntryClass { MATCHED, OPENNMS, ORPHAN, AMBIGUOUS, SKIPPED, FAILED_READ }
+public enum EntryClass { MATCHED, OPENNMS, ORPHAN, AMBIGUOUS, SKIPPED, FAILED_READ, MTYPE_MISMATCH }

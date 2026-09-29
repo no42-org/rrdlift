@@ -86,6 +86,12 @@ public final class Planner {
                         }
                     }
                 }
+                if ((cls == EntryClass.MATCHED || cls == EntryClass.OPENNMS) && labels.containsKey("mtype")
+                        && !mtype.equals(labels.get("mtype"))) {
+                    note = "label mtype=" + labels.get("mtype") + ", RRD data source is " + ds.type();
+                    cls = EntryClass.MTYPE_MISMATCH;
+                    labels = null;
+                }
                 Series s = series.get(ds.name());
                 if (labels != null && s != null && s.size() > 0) {
                     oldest = Math.min(oldest, s.timesMs()[0] / 1000);

@@ -67,6 +67,25 @@ class PlannerTest {
     }
 
     @Test
+    void labelSetWithDifferentMtypeIsNotWritten(@TempDir Path tmp) throws Exception {
+        LabelIndex live = live();
+        live.add(Map.of("__name__", "ifSpeed", "resourceId", ETH0, "mtype", "count", "node", "n1"));
+        LabelIndex exported = opennms();
+        exported.add(Map.of("__name__", "ifHCOutOctets", "resourceId", ETH0, "mtype", "gauge", "node", "n1"));
+
+        Map<String, PlanEntry> e = byName(Planner.plan(TestRepos.create(tmp), OPENER, live, exported, false));
+        PlanEntry speed = e.get(ETH0 + "|ifSpeed");
+        assertThat(speed.entryClass()).isEqualTo(EntryClass.MTYPE_MISMATCH);
+        assertThat(speed.labels()).isNull();
+        assertThat(speed.note()).isEqualTo("label mtype=count, RRD data source is GAUGE");
+        PlanEntry out = e.get(ETH0 + "|ifHCOutOctets");
+        assertThat(out.entryClass()).isEqualTo(EntryClass.MTYPE_MISMATCH);
+        assertThat(out.labels()).isNull();
+        assertThat(out.note()).isEqualTo("label mtype=gauge, RRD data source is COUNTER");
+        assertThat(e.get("response/10.0.0.1/icmp|icmp").entryClass()).isEqualTo(EntryClass.MATCHED);
+    }
+
+    @Test
     void skipOrphansKeepsThemListedButUnwritable(@TempDir Path tmp) throws Exception {
         Plan plan = Planner.plan(TestRepos.create(tmp), OPENER, live(), null, true);
         PlanEntry speed = byName(plan).get(ETH0 + "|ifSpeed");
