@@ -1,0 +1,41 @@
+/*
+ * Copyright 2026 Ronny Trommer <ronny@no42.org>
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+package org.no42.rrdlift.cli;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.file.Path;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.no42.rrdlift.Main;
+import org.no42.rrdlift.prom.FakeBackend;
+import org.no42.rrdlift.repo.TestRepos;
+
+class PreflightCommandTest {
+
+    @Test
+    void scansRepositoryForOldestSampleAndPasses(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp);
+        try (FakeBackend backend = FakeBackend.start()) {
+            int exit = Main.run("preflight", "--rrd-dir", repo.toString(),
+                    "--write-url", backend.writeUrl().toString(), "--read-url", backend.readUrl().toString());
+            assertThat(exit).isZero();
+            long oldestProbeMs = backend.data().values().stream()
+                    .mapToLong(m -> m.firstKey()).min().orElseThrow();
+            assertThat(oldestProbeMs).isLessThan(System.currentTimeMillis() - 300L * 86400 * 1000);
+        }
+    }
+
+    @Test
+    void failsWhenBackendRejectsOldSamples(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp);
+        try (FakeBackend backend = FakeBackend.start()) {
+            backend.rejectOlderThanMs(System.currentTimeMillis() - 3600_000L);
+            int exit = Main.run("preflight", "--rrd-dir", repo.toString(),
+                    "--write-url", backend.writeUrl().toString(), "--read-url", backend.readUrl().toString());
+            assertThat(exit).isEqualTo(1);
+        }
+    }
+}
