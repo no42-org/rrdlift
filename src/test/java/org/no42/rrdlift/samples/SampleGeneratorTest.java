@@ -69,7 +69,7 @@ class SampleGeneratorTest {
         Series s = SampleGenerator.generate(rrd, Pass.ALL).get(0);
         assertThat(s.counter()).isTrue();
         assertThat(points(s)).containsExactly(
-                Map.entry(L - 10800, 5150.0), Map.entry(L - 7200, 6950.0), Map.entry(L - 3600, 7850.0),
+                Map.entry(L - 10800, -11650.0), Map.entry(L - 7200, -9850.0), Map.entry(L - 3600, -8950.0),
                 Map.entry(L - 1200, 7850.0), Map.entry(L - 900, 8150.0), Map.entry(L - 600, 8750.0),
                 Map.entry(L - 300, 8750.0), Map.entry(L, 9950.0), Map.entry(L + 100, 10000.0));
     }
@@ -126,6 +126,20 @@ class SampleGeneratorTest {
             }
             assertThat(compared).as("compared intervals for ds %d", ds).isGreaterThan(1000);
         }
+    }
+
+    @Test
+    void counterIncreasesAcrossTheSevenDaySeam() throws Exception {
+        RrdFile rrd = fixture("aarch64", "grp");
+        Archive fine = rrd.archives().stream().filter(a -> a.pdpPerRow() == 1).findFirst().orElseThrow();
+        long coverageStart = fine.rowTime(0, rrd.step(), rrd.lastUpdate()) - rrd.step();
+        long hourBefore = coverageStart - Math.floorMod(coverageStart, 3600L);
+        assertThat(hourBefore).isLessThan(coverageStart);
+        int ds = 2; // ifHCInOctets
+        assertThat(rrd.dataSources().get(ds).name()).isEqualTo("ifHCInOctets");
+        Map<Long, Double> p = points(SampleGenerator.generate(rrd, Pass.ALL).get(ds));
+        assertThat(p).containsKeys(coverageStart, hourBefore);
+        assertThat(p.get(coverageStart) - p.get(hourBefore)).isGreaterThan(0);
     }
 
     @ParameterizedTest
