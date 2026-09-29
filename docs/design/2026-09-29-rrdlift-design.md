@@ -132,7 +132,10 @@ With default RRAs one data source yields 2016 + 1320 + 304 = 3,640 samples.
 
 - RRD stores per-second rates.
   The live plugin stores raw counter values tagged `mtype=count`.
-- Walk rows backwards from the end: `C(end) = last_ds`, `C(t - step) = C(t) - rate(t) * step`.
+- Anchor at the last update: `C(lastUpdate) = last_ds`, written as a sample of its own.
+  The newest row ends at the step boundary `end <= lastUpdate`; the increase between `end` and `lastUpdate` is the PDP preparation value, so `C(end) = last_ds - pdp_prep value`.
+  The same holds for JRobin, whose `accumValue` is that quantity (verified 2026-09-29).
+- Walk rows backwards from `end`: `C(t - S) = C(t) - rate(t) * S`, with `S` the row's interval.
 - `last_ds` is the exact raw value of the last poll before the stop.
   The first live sample is the exact raw value of the first poll after the start.
   The two join without an offset; any increase during the downtime appears as increase over the gap.
@@ -144,6 +147,7 @@ With default RRAs one data source yields 2016 + 1320 + 304 = 3,640 samples.
   OpenNMS converts with `new Counter(value.longValue())` (`NewtsConverterUtils.java:96`); in two's complement a negative-to-positive crossing looks like a 64-bit wrap, and the Newts rate computes the correct delta.
   Values near 2^64 would lose precision as doubles (granularity of 2048 or more).
 - NaN rows count as zero increase, as in the converter.
+- An unknown `last_ds` (`U`) anchors `C(end) = 0` and writes no `lastUpdate` sample.
 - ABSOLUTE data sources are reported and skipped; OpenNMS does not create them.
 
 ### 3. Label index
