@@ -33,7 +33,9 @@ class PromClientTest {
 
     @Test
     void writesAndReadsBack() throws Exception {
-        client.write(List.of(new TimeSeries(LABELS, new long[] {1_000_000, 1_300_000}, new double[] {1.5, 2.5})));
+        Map<String, String> decoy = Map.of("__name__", "icmp", "resourceId", "response/10x0x0x1/icmp");
+        client.write(List.of(new TimeSeries(LABELS, new long[] {1_000_000, 1_300_000}, new double[] {1.5, 2.5}),
+                new TimeSeries(decoy, new long[] {1_000_000}, new double[] {9})));
         assertThat(backend.data().get(LABELS)).containsEntry(1_000_000L, 1.5).containsEntry(1_300_000L, 2.5);
         assertThat(backend.requests()).anyMatch(r -> r.contains("X-Scope-OrgID=tenant-a"));
 
@@ -44,9 +46,36 @@ class PromClientTest {
 
         List<PromClient.QueryResult> instant = client.query(Selectors.exact(LABELS), 1_000);
         assertThat(instant.get(0).values()).containsExactly(1.5);
+        assertThat(instant.get(0).timesMs()).containsExactly(1_000_000);
+        assertThat(client.query(Selectors.exact(LABELS), 1_100).get(0).timesMs()).containsExactly(1_100_000);
 
         assertThat(client.series(Selectors.resourcePrefix("response/10.0.0.1"), 0, 2_000)).containsExactly(LABELS);
         assertThat(client.series(Selectors.resourcePrefix("response/10.0.0.10"), 0, 2_000)).isEmpty();
+    }
+
+    @Test
+    void seriesHonoursTimeWindow() throws Exception {
+        client.write(List.of(new TimeSeries(LABELS, new long[] {1_000_000}, new double[] {1})));
+        assertThat(client.series(Selectors.exact(LABELS), 1_000, 1_000)).containsExactly(LABELS);
+        assertThat(client.series(Selectors.exact(LABELS), 0, 999)).isEmpty();
+        assertThat(client.series(Selectors.exact(LABELS), 1_001, 2_000)).isEmpty();
+    }
+
+    @Test
+    void partialIngestStoresInBoundsSamples() {
+        backend.rejectOlderThanMs(5000);
+        List<TimeSeries> mixed = List.of(new TimeSeries(LABELS, new long[] {1000, 6000}, new double[] {1, 2}));
+        assertThatThrownBy(() -> client.write(mixed)).isInstanceOfSatisfying(WriteException.class,
+                e -> assertThat(e.status()).isEqualTo(400));
+        assertThat(backend.data().get(LABELS)).containsOnlyKeys(6000L);
+    }
+
+    @Test
+    void unsupportedMatchersAreRejected() {
+        assertThatThrownBy(() -> client.series("{resourceId!=\"x\"}", 0, 2_000))
+                .hasMessageContaining("unsupported matcher");
+        assertThatThrownBy(() -> client.query("{resourceId!~\"x\"}", 1_000))
+                .hasMessageContaining("unsupported matcher");
     }
 
     @Test
