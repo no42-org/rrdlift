@@ -8,6 +8,7 @@ import org.no42.rrdlift.cli.BackfillCommand;
 import org.no42.rrdlift.cli.PlanCommand;
 import org.no42.rrdlift.cli.PreflightCommand;
 import org.no42.rrdlift.cli.SnapshotLabelsCommand;
+import org.no42.rrdlift.cli.VerifyCommand;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
@@ -19,7 +20,7 @@ import picocli.CommandLine.Spec;
         versionProvider = VersionProvider.class,
         description = "Migrates OpenNMS RRDtool and JRobin history into Prometheus-compatible backends.",
         subcommands = {PreflightCommand.class, SnapshotLabelsCommand.class, PlanCommand.class,
-                BackfillCommand.class})
+                BackfillCommand.class, VerifyCommand.class})
 public final class Main implements Runnable {
 
     /** sysexits.h EX_USAGE. Picocli's default of 2 would collide with backfill's paused code. */
