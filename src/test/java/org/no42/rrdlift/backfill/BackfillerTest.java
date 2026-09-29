@@ -5,9 +5,12 @@
 package org.no42.rrdlift.backfill;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.PrintStream;
+import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.nio.file.Files;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Path;
@@ -140,5 +143,21 @@ class BackfillerTest {
         assertThat(recent.entrySet()).filteredOn(e -> !e.getKey().equals(icmp))
                 .allMatch(e -> e.getValue().status() == Checkpoint.Status.DONE);
         assertThat(recent).hasSize(3);
+    }
+
+    @Test
+    void checkpointWriteFailureAbortsInsteadOfPausing() throws Exception {
+        Path stateDir = tmp.resolve("blocked");
+        Files.createDirectories(stateDir);
+        Files.writeString(stateDir.resolve("state"), "a regular file where the state directory belongs");
+        Backfiller b = new Backfiller(new PromClient(backend.writeUrl(), null, null), OPENER, new Checkpoint(stateDir),
+                new RateLimiter(0), 1, 2000, 0, n -> { }, QUIET);
+
+        assertThatThrownBy(() -> b.run(plan, false))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("backfill aborted");
+
+        int firstFileEntries = plan.writableByFile().values().iterator().next().size();
+        assertThat(backend.writeCount()).isPositive().isLessThanOrEqualTo(firstFileEntries);
     }
 }

@@ -81,18 +81,25 @@ public final class Backfiller {
                 return retryFailed ? e != null && e.status() == Checkpoint.Status.FAILED : e == null;
             }).toList();
             AtomicReference<String> pause = new AtomicReference<>();
+            AtomicReference<Throwable> error = new AtomicReference<>();
             ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, threads));
             List<Future<Checkpoint.Entry>> futures = new ArrayList<>();
             for (String file : todo) {
                 futures.add(pool.submit(() -> {
-                    if (pause.get() != null) {
+                    if (pause.get() != null || error.get() != null) {
                         return null;
                     }
                     try {
                         return processFile(file, files.get(file), pass);
                     } catch (PauseException e) {
                         pause.compareAndSet(null, e.getMessage()); // before the next task on this thread starts
-                        throw e;
+                        return null;
+                    } catch (Exception e) {
+                        if (e instanceof InterruptedException) {
+                            Thread.currentThread().interrupt();
+                        }
+                        error.compareAndSet(null, e); // stop starting files; not a backend outage
+                        return null;
                     }
                 }));
             }
@@ -111,11 +118,15 @@ public final class Backfiller {
                         log.println("backfill: FAILED " + e.file() + " (" + pass + "): " + e.error());
                     }
                 } catch (ExecutionException ex) {
-                    Throwable cause = ex.getCause();
-                    pause.compareAndSet(null, cause instanceof PauseException ? cause.getMessage() : String.valueOf(cause));
+                    error.compareAndSet(null, ex.getCause()); // an Error escaped the task
                 }
             }
             pool.awaitTermination(1, TimeUnit.MINUTES);
+            Throwable failure = error.get();
+            if (failure != null) {
+                String message = failure.getMessage() != null ? failure.getMessage() : failure.getClass().getSimpleName();
+                throw new IOException("backfill aborted: " + message, failure);
+            }
             log.printf("backfill: pass %s: %d files done, %d failed so far%n", pass, done, failed);
             if (pause.get() != null) {
                 log.println("backfill: paused: " + pause.get());
