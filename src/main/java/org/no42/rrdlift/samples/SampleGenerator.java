@@ -20,8 +20,11 @@ public final class SampleGenerator {
 
     private SampleGenerator() {}
 
-    /** One consolidated interval (end - span, end]. */
-    private record Interval(long end, long span, double[] values) {}
+    /**
+     * One consolidated interval (end - span, end]. A partial interval is the part of a coarse row that a finer
+     * archive does not cover: it keeps the row's values but ends at the finer archive's start.
+     */
+    private record Interval(long end, long span, double[] values, boolean partial) {}
 
     public static boolean supported(DataSource ds) {
         return switch (ds.type()) {
@@ -81,7 +84,9 @@ public final class SampleGenerator {
             for (int j = a.rows().length - 1; j >= 0; j--) {
                 long t = a.rowTime(j, rrd.step(), rrd.lastUpdate());
                 if (t <= coverageStart) {
-                    out.add(new Interval(t, span, a.rows()[j]));
+                    out.add(new Interval(t, span, a.rows()[j], false));
+                } else if (t - span < coverageStart) {
+                    out.add(new Interval(coverageStart, coverageStart - (t - span), a.rows()[j], true));
                 }
             }
             if (a.rows().length > 0) {
@@ -95,7 +100,7 @@ public final class SampleGenerator {
         Map<Long, Double> points = new TreeMap<>();
         for (Interval iv : intervals) {
             double v = iv.values()[ds];
-            if (!Double.isNaN(v)) {
+            if (!iv.partial() && !Double.isNaN(v)) {
                 points.put(iv.end(), v);
             }
         }
@@ -114,18 +119,13 @@ public final class SampleGenerator {
             points.put(rrd.lastUpdate(), d.lastValue());
             c = d.lastValue() - (Double.isNaN(d.pdpValue()) ? 0 : d.pdpValue());
         }
-        long cursor = intervals.get(0).end();
         for (Interval iv : intervals) {
-            if (iv.end() < cursor) {
-                cursor = iv.end(); // gap between archives: no increase
-            }
             double rate = iv.values()[ds];
             if (!Double.isNaN(rate)) {
                 points.put(iv.end(), c);
                 c -= rate * iv.span();
                 points.put(iv.end() - iv.span(), c);
             }
-            cursor = iv.end() - iv.span();
         }
         return points;
     }

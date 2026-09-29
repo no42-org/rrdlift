@@ -120,6 +120,9 @@ Ported from `NewtsConverter.generateSamples` (`NewtsConverter.java:703`), with t
 **RRA stitching (unchanged):**
 the `pdpPerRow = 1` RRA with the most rows, regardless of consolidation function, then AVERAGE RRAs ordered by step.
 Each coarser RRA only contributes the range the finer one does not cover.
+The coarse row that straddles a finer RRA's start contributes only the part the finer RRA does not cover.
+For counters that row is clipped to the uncovered part and applied at its rate, so the seam shows no flat segment.
+Gauges leave that part empty.
 With default RRAs one data source yields 2016 + 1320 + 304 = 3,640 samples.
 
 **Timestamps:** the end of each row's consolidation interval, in milliseconds.
