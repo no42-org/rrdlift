@@ -60,7 +60,7 @@ Every live series has a sample at "now", so every backfilled sample is out of or
 |---|---|
 | Prometheus | `--web.enable-remote-write-receiver`. `storage.tsdb.out_of_order_time_window` longer than the oldest RRD sample. Without it Prometheus rejects old samples as out of order or out of bounds, including the first sample of a new series. |
 | Mimir, Cortex, Thanos Receive | Out-of-order window per tenant, same TSDB rules. Check the version for support. |
-| VictoriaMetrics | No ordering rules. `-retentionPeriod` must cover the oldest sample, because older samples are dropped silently. Reset the rollup cache after the backfill (`/internal/resetRollupResultCache`) or run with `-search.disableCache` during it. Instant queries do not return a sample at exactly its timestamp, and samples newer than `-search.latencyOffset` (default 30s) are hidden, so rrdlift reads back with range selectors. VictoriaMetrics keeps about 12 significant digits, so verify it with `--tolerance 1e-11`. |
+| VictoriaMetrics | No ordering rules. `-retentionPeriod` must cover the oldest sample, because older samples are dropped silently. Reset the rollup cache after the backfill (`/internal/resetRollupResultCache`) or run with `-search.disableCache` during it. Instant queries do not return a sample at exactly its timestamp, and samples newer than `-search.latencyOffset` (default 30s) are hidden, so rrdlift reads back with range selectors. VictoriaMetrics keeps about 14 significant digits, so verify it with `--tolerance 1e-11`. |
 | Managed services | Check the provider's out-of-order and age limits. |
 
 For all backends, retention must be longer than the oldest RRD sample.
@@ -158,7 +158,8 @@ With default RRAs one data source yields 2016 + 1320 + 304 = 3,640 samples.
 `snapshot-labels`:
 
 - Reads the node-level directory list from the reader.
-- For each, queries `GET <readUrl>/api/v1/series?match[]={resourceId=~"<dir>/.*"}&start=<oldest>` so no single response holds millions of series.
+- For each, queries `GET <readUrl>/api/v1/series?match[]={resourceId=~"<dir>/.*"}&start=<now - since-days>` so no single response holds millions of series.
+  `--since-days` (default 7) sets the series start, so only series active in that window are found.
 - Writes `labels-prometheus.json`: `(resourceId, __name__) -> full label set`.
 - Sends `X-Scope-OrgID` when `--org-id` is set.
 
@@ -172,7 +173,7 @@ With default RRAs one data source yields 2016 + 1320 + 304 = 3,640 samples.
 
 `plan` also writes `not-migrated.txt` (`--not-migrated`).
 It has one tab-separated line per entry that will not be written: class, resourceId or file, data source name, note.
-The lines are sorted, after a header line `# class\tresource\tds\tnote` (tab-separated).
+The lines are sorted, after a header line `# class\tresource\tds\tnote`.
 
 A matched or exported label set whose `mtype` label differs from the data source type (`count` for COUNTER and DERIVE, `gauge` for GAUGE) is not written.
 The entry is classed `MTYPE_MISMATCH` and listed.
@@ -234,14 +235,16 @@ Pass 2 starts after pass 1 has finished for every file.
 `verify [--sample <percent>|--all]`:
 
 - Regenerates samples from `share/rrd` for the selected files.
-- Reads them back with `query_range` at the raw step for each RRA segment.
+- Reads each series back with one range selector over its whole range (`<exact selector>[<n>s]`, evaluated at the last update), which returns the raw samples.
+  Every expected timestamp must be present.
 - Gauges must match exactly.
   Counters must match on consecutive deltas.
 - `--tolerance` (default 0, exact) is relative to the stored values.
   Gauges compare with it directly.
   For counters, the allowed delta error is the tolerance times the largest of the four values involved (two expected, two stored).
   The error that storage precision puts on a delta scales with the counter value, not with the delta.
-- VictoriaMetrics keeps about 12 significant digits, so verify it with `--tolerance 1e-11`.
+  The worst-case allowance per delta is therefore `tolerance × |counter|`, for example about 9.2e7 near 9.2e18 at `--tolerance 1e-11`.
+- VictoriaMetrics keeps about 14 significant digits, so verify it with `--tolerance 1e-11`.
 - Default selection: 1% random files plus every file that needed a retry.
 - Before the sample check, verify compares the checkpoint with the plan.
   It reports how many writable files are done in both passes and lists up to 20 that are not.

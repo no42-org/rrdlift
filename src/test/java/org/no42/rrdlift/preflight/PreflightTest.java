@@ -60,4 +60,12 @@ class PreflightTest {
         Preflight.Result r = Preflight.run(client, OLDEST, NOW, 1, 0);
         assertThat(r.failures()).singleElement().asString().contains("remote-write receiver");
     }
+
+    @Test
+    void currentReadBackFailureDescribesTheRangeSelectorProbe() {
+        backend.dropOlderThanMs(Long.MAX_VALUE);
+        Preflight.Result r = Preflight.run(client, OLDEST, NOW, 1, 0);
+        assertThat(r.failures()).anyMatch(f -> f.contains("60 s old") && f.contains("range selector"));
+        assertThat(r.failures()).noneMatch(f -> f.contains("written now") || f.contains("/api/v1/query"));
+    }
 }
