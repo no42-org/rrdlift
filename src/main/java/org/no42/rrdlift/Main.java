@@ -4,6 +4,7 @@
  */
 package org.no42.rrdlift;
 
+import org.no42.rrdlift.cli.SnapshotLabelsCommand;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
@@ -14,7 +15,7 @@ import picocli.CommandLine.Spec;
         mixinStandardHelpOptions = true,
         versionProvider = VersionProvider.class,
         description = "Migrates OpenNMS RRDtool and JRobin history into Prometheus-compatible backends.",
-        subcommands = {})
+        subcommands = {SnapshotLabelsCommand.class})
 public final class Main implements Runnable {
 
     @Spec
@@ -26,7 +27,7 @@ public final class Main implements Runnable {
     }
 
     public static int run(String... args) {
-        return new CommandLine(new Main()).execute(args);
+        return new CommandLine(new Main()).setCaseInsensitiveEnumValuesAllowed(true).execute(args);
     }
 
     public static void main(String[] args) {
