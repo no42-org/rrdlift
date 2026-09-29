@@ -131,7 +131,7 @@ public final class Verifier {
                     double got = a - prev;
                     double magnitude = Math.max(Math.max(Math.abs(a), Math.abs(prev)),
                             Math.max(Math.abs(s.values()[i]), Math.abs(s.values()[i - 1])));
-                    if (Math.abs(got - expected) > tolerance * magnitude) {
+                    if (!(Math.abs(got - expected) <= tolerance * magnitude)) {
                         mismatches.add(new Mismatch(file, s.dsName(), t, "delta", expected, got));
                     }
                 }
