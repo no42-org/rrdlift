@@ -61,8 +61,9 @@ public final class PreflightCommand implements Callable<Integer> {
         for (WorkItem item : RepositoryWalker.walk(rrdDir).items()) {
             try {
                 oldest = Math.min(oldest, SampleGenerator.oldestRowTime(opener.open(item.file())));
-            } catch (IOException e) {
-                System.err.println("preflight: skipping " + item.file() + ": " + e.getMessage());
+            } catch (IOException | RuntimeException e) {
+                String msg = e.getMessage();
+                System.err.println("preflight: skipping " + item.file() + ": " + (msg != null ? msg : e.getClass().getSimpleName()));
             }
         }
         return oldest;

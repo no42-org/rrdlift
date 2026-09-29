@@ -33,7 +33,7 @@ public final class Preflight {
         List<String> failures = new ArrayList<>();
         Map<String, String> probe = Map.of("__name__", "rrdlift_probe", "run", UUID.randomUUID().toString());
         String selector = Selectors.exact(probe);
-        long days = (nowSec - oldestSec) / 86400;
+        long days = (nowSec - oldestSec + 86399) / 86400;
 
         try {
             client.write(List.of(new TimeSeries(probe, new long[] {nowSec * 1000}, new double[] {1})));
