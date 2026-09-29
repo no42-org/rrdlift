@@ -5,7 +5,8 @@
 package org.no42.rrdlift.repo;
 
 import java.io.IOException;
-import java.io.Reader;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -52,28 +53,37 @@ public final class RepositoryWalker {
         Set<Path> referenced = new HashSet<>();
         Path ds = dir.resolve("ds.properties");
         if (Files.isRegularFile(ds)) {
-            for (String group : new TreeSet<>(load(ds).stringPropertyNames().stream()
-                    .map(k -> load(ds).getProperty(k)).collect(Collectors.toSet()))) {
-                Path file = pick(dir, group, referenced, skipped);
-                if (file == null) {
-                    skipped.add(new WalkResult.Skipped(dir.resolve(group), "listed in ds.properties but no .rrd or .jrb file"));
-                } else {
-                    items.add(new WorkItem(file, relative + "/" + group, group));
+            Properties dsProps = load(ds, items, skipped);
+            if (dsProps != null) {
+                for (String group : new TreeSet<>(dsProps.stringPropertyNames().stream()
+                        .map(k -> dsProps.getProperty(k)).collect(Collectors.toSet()))) {
+                    Path file = pick(dir, group, referenced, skipped);
+                    if (file == null) {
+                        skipped.add(new WalkResult.Skipped(dir.resolve(group), "listed in ds.properties but no .rrd or .jrb file"));
+                    } else {
+                        items.add(new WorkItem(file, relative + "/" + group, group));
+                    }
                 }
             }
         } else {
             List<Path> metas;
             try (Stream<Path> s = Files.list(dir)) {
-                metas = s.filter(p -> p.getFileName().toString().endsWith(".meta")).sorted().collect(Collectors.toList());
+                metas = s.filter(p -> Files.isRegularFile(p) && p.getFileName().toString().endsWith(".meta")).sorted().collect(Collectors.toList());
             }
             for (Path meta : metas) {
-                String group = load(meta).getProperty("GROUP");
+                Properties metaProps = load(meta, items, skipped);
+                if (metaProps == null) {
+                    continue;
+                }
+                String group = metaProps.getProperty("GROUP");
                 if (group == null) {
                     continue;
                 }
                 String metric = meta.getFileName().toString().replaceFirst("\\.meta$", "");
                 Path file = pick(dir, metric, referenced, skipped);
-                if (file != null) {
+                if (file == null) {
+                    skipped.add(new WalkResult.Skipped(dir.resolve(metric), "listed in .meta but no .rrd or .jrb file"));
+                } else {
                     items.add(new WorkItem(file, relative + "/" + group, group));
                 }
             }
@@ -124,13 +134,14 @@ public final class RepositoryWalker {
         return String.join("/", parts);
     }
 
-    private static Properties load(Path file) {
+    private static Properties load(Path file, List<WorkItem> items, List<WalkResult.Skipped> skipped) {
         Properties p = new Properties();
-        try (Reader r = Files.newBufferedReader(file)) {
-            p.load(r);
+        try (InputStream is = Files.newInputStream(file)) {
+            p.load(is);
+            return p;
         } catch (IOException e) {
-            throw new java.io.UncheckedIOException(e);
+            skipped.add(new WalkResult.Skipped(file, "cannot read: " + e.getMessage()));
+            return null;
         }
-        return p;
     }
 }

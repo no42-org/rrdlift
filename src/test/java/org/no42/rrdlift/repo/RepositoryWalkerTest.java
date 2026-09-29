@@ -75,4 +75,48 @@ class RepositoryWalkerTest {
         assertThat(RepositoryWalker.nodePrefix("snmp/fs/fs1/fid1/mib2-tcp")).isEqualTo("snmp/fs/fs1/fid1");
         assertThat(RepositoryWalker.nodePrefix("response/10.0.0.1/icmp")).isEqualTo("response/10.0.0.1");
     }
+
+    @Test
+    void handlesISO8859_1BytesInProperties(@TempDir Path tmp) throws Exception {
+        Path dir = Files.createDirectories(tmp.resolve("snmp/6/eth2"));
+        // Write ds.properties with ISO-8859-1 byte (é = 0xE9): "mib2-interféces"
+        Files.write(dir.resolve("ds.properties"),
+                new byte[] {0x6D, 0x69, 0x62, 0x32, 0x2D, 0x69, 0x6E, 0x74, 0x65, 0x72, 0x66,
+                            (byte)0xE9, 0x63, 0x65, 0x73, 0x3D, 0x6D, 0x69, 0x62, 0x32, 0x2D, 0x69,
+                            0x6E, 0x74, 0x65, 0x72, 0x66, (byte)0xE9, 0x63, 0x65, 0x73, 0x0A});
+        Files.write(dir.resolve("mib2-interféces.rrd"), new byte[] {0});
+
+        WalkResult result = RepositoryWalker.walk(tmp);
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.items().get(0).group()).isEqualTo("mib2-interféces");
+        assertThat(result.items().get(0).resourceId()).isEqualTo("snmp/6/eth2/mib2-interféces");
+        assertThat(result.skipped()).isEmpty();
+    }
+
+    @Test
+    void ignoresDirectoriesNamedMeta(@TempDir Path tmp) throws Exception {
+        Path dir = Files.createDirectories(tmp.resolve("snmp/7/eth3"));
+        Files.createDirectories(dir.resolve("broken.meta"));  // Directory, not a file
+        Files.writeString(dir.resolve("ds.properties"), "ifInOctets=mib2-interfaces\n");
+        Files.write(dir.resolve("mib2-interfaces.rrd"), new byte[] {0});
+
+        WalkResult result = RepositoryWalker.walk(tmp);
+        assertThat(result.items()).hasSize(1);
+        assertThat(result.items().get(0).group()).isEqualTo("mib2-interfaces");
+        assertThat(result.skipped()).isEmpty();
+    }
+
+    @Test
+    void reportsMetaWithGroupButNoFile(@TempDir Path tmp) throws Exception {
+        Path dir = Files.createDirectories(tmp.resolve("snmp/8/eth4"));
+        Files.writeString(dir.resolve("ifInOctets.meta"), "GROUP=mib2-interfaces\n");
+        // No ifInOctets.rrd or ifInOctets.jrb
+
+        WalkResult result = RepositoryWalker.walk(tmp);
+        assertThat(result.items()).isEmpty();
+        assertThat(result.skipped()).extracting(WalkResult.Skipped::reason)
+                .containsExactly("listed in .meta but no .rrd or .jrb file");
+        assertThat(result.skipped()).extracting(WalkResult.Skipped::file)
+                .containsExactly(dir.resolve("ifInOctets"));
+    }
 }
