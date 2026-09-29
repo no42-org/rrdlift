@@ -61,6 +61,17 @@ public final class SampleGenerator {
         return selected;
     }
 
+    /** Earliest row end time among the archives the generator uses; Long.MAX_VALUE if there are none. */
+    public static long oldestRowTime(RrdFile rrd) {
+        long oldest = Long.MAX_VALUE;
+        for (Archive a : selectArchives(rrd)) {
+            if (a.rows().length > 0) {
+                oldest = Math.min(oldest, a.rowTime(0, rrd.step(), rrd.lastUpdate()));
+            }
+        }
+        return oldest;
+    }
+
     /** Non-overlapping intervals, newest first. */
     private static List<Interval> stitch(RrdFile rrd) {
         List<Interval> out = new ArrayList<>();
