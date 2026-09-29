@@ -48,7 +48,8 @@ final class Migration {
 
         Path planFile = tmp.resolve("plan.json");
         assertThat(Main.run("plan", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
-                "--out", planFile.toString(), "--orphans", tmp.resolve("orphans.txt").toString())).isZero();
+                "--out", planFile.toString(), "--orphans", tmp.resolve("orphans.txt").toString(),
+                "--not-migrated", tmp.resolve("not-migrated.txt").toString())).isZero();
         Plan plan = Plan.load(planFile);
         PlanEntry icmp = plan.entries().stream().filter(e -> "icmp".equals(e.dsName())).findFirst().orElseThrow();
         assertThat(icmp.entryClass()).isEqualTo(EntryClass.MATCHED);
