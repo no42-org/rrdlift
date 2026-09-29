@@ -66,4 +66,12 @@ class PreflightCommandTest {
             assertThat(exit).isEqualTo(1);
         }
     }
+
+    @Test
+    void missingUrlsExitWith64(@TempDir Path tmp) {
+        assertThat(Main.run("preflight", "--rrd-dir", tmp.toString(), "--oldest-epoch", "1",
+                "--read-url", "http://127.0.0.1:1")).isEqualTo(64);
+        assertThat(Main.run("preflight", "--rrd-dir", tmp.toString(), "--oldest-epoch", "1",
+                "--write-url", "http://127.0.0.1:1/api/v1/write")).isEqualTo(64);
+    }
 }

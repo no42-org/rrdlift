@@ -159,6 +159,13 @@ class VerifierTest {
     }
 
     @Test
+    void commandWithoutReadUrlExitsWith64() throws Exception {
+        Path planFile = tmp.resolve("plan.json");
+        plan.save(planFile);
+        assertThat(Main.run("verify", "--plan", planFile.toString(), "--state-dir", tmp.toString())).isEqualTo(64);
+    }
+
+    @Test
     void corruptFileBecomesReadMismatchAndVerificationContinues() throws Exception {
         String icmp = plan.entries().stream().filter(p -> "icmp".equals(p.dsName())).findFirst().orElseThrow().file();
         try (RandomAccessFile raf = new RandomAccessFile(icmp, "rw")) {

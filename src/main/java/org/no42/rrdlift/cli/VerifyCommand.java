@@ -18,6 +18,8 @@ import picocli.CommandLine.Option;
         description = "Reads backfilled history back and compares it with the RRD files. Exit 1 on any mismatch.")
 public final class VerifyCommand implements Callable<Integer> {
 
+    private static final int USAGE = 64;
+
     @Option(names = "--plan", required = true)
     Path plan;
 
@@ -44,6 +46,10 @@ public final class VerifyCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        if (connection.readUrl == null) {
+            System.err.println("verify: --read-url is required");
+            return USAGE;
+        }
         try {
             Plan p = Plan.load(plan);
             List<String> files = Verifier.select(p, new Checkpoint(stateDir), all, percent, seed);

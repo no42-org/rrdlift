@@ -21,6 +21,8 @@ import picocli.CommandLine.Option;
         description = "Checks that the backend accepts and returns samples as old as the RRD history.")
 public final class PreflightCommand implements Callable<Integer> {
 
+    private static final int USAGE = 64;
+
     @Option(names = "--rrd-dir", defaultValue = "/opt/opennms/share/rrd")
     Path rrdDir;
 
@@ -35,6 +37,14 @@ public final class PreflightCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        if (connection.writeUrl == null) {
+            System.err.println("preflight: --write-url is required");
+            return USAGE;
+        }
+        if (connection.readUrl == null) {
+            System.err.println("preflight: --read-url is required");
+            return USAGE;
+        }
         try {
             long now = System.currentTimeMillis() / 1000;
             long oldest = oldestEpoch != null ? oldestEpoch : scan(readerOptions.opener());

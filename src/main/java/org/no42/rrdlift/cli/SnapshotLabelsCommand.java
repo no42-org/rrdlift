@@ -21,6 +21,8 @@ import picocli.CommandLine.Option;
         description = "Copies the labels of live series from the backend into a label index file.")
 public final class SnapshotLabelsCommand implements Callable<Integer> {
 
+    private static final int USAGE = 64;
+
     @Option(names = "--rrd-dir", defaultValue = "/opt/opennms/share/rrd")
     Path rrdDir;
 
@@ -35,6 +37,10 @@ public final class SnapshotLabelsCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        if (connection.readUrl == null) {
+            System.err.println("snapshot-labels: --read-url is required");
+            return USAGE;
+        }
         try {
             Set<String> prefixes = new TreeSet<>();
             for (WorkItem item : RepositoryWalker.walk(rrdDir).items()) {
