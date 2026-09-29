@@ -19,6 +19,8 @@ import picocli.CommandLine.Option;
         description = "Writes the planned RRD history to the backend; resumable. Exit 0 done, 1 files failed, 2 paused.")
 public final class BackfillCommand implements Callable<Integer> {
 
+    private static final int USAGE = 64;
+
     @Option(names = "--plan", required = true)
     Path plan;
 
@@ -51,7 +53,19 @@ public final class BackfillCommand implements Callable<Integer> {
         try {
             if (connection.writeUrl == null) {
                 System.err.println("backfill: --write-url is required");
-                return 1;
+                return USAGE;
+            }
+            if (batchSamples < 1) {
+                System.err.println("backfill: --batch-samples must be at least 1");
+                return USAGE;
+            }
+            if (maxRetries < 0) {
+                System.err.println("backfill: --max-retries must be 0 or more");
+                return USAGE;
+            }
+            if (threads < 1) {
+                System.err.println("backfill: --threads must be at least 1");
+                return USAGE;
             }
             Backfiller backfiller = new Backfiller(connection.client(), readerOptions.opener(), new Checkpoint(stateDir),
                     new RateLimiter(rate), threads, batchSamples, maxRetries, TimeUnit.NANOSECONDS::sleep, System.out);

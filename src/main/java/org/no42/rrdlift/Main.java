@@ -22,6 +22,9 @@ import picocli.CommandLine.Spec;
                 BackfillCommand.class})
 public final class Main implements Runnable {
 
+    /** sysexits.h EX_USAGE. Picocli's default of 2 would collide with backfill's paused code. */
+    static final int EX_USAGE = 64;
+
     @Spec
     CommandSpec spec;
 
@@ -31,7 +34,16 @@ public final class Main implements Runnable {
     }
 
     public static int run(String... args) {
-        return new CommandLine(new Main()).setCaseInsensitiveEnumValuesAllowed(true).execute(args);
+        CommandLine cli = new CommandLine(new Main()).setCaseInsensitiveEnumValuesAllowed(true);
+        cli.setParameterExceptionHandler((ex, rawArgs) -> {
+            CommandLine c = ex.getCommandLine();
+            c.getErr().println(ex.getMessage());
+            if (!CommandLine.UnmatchedArgumentException.printSuggestions(ex, c.getErr())) {
+                ex.getCommandLine().usage(c.getErr());
+            }
+            return EX_USAGE;
+        });
+        return cli.execute(args);
     }
 
     public static void main(String[] args) {

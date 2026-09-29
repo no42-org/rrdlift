@@ -33,4 +33,19 @@ class BackfillCommandTest {
             assertThat(backend.data()).isNotEmpty();
         }
     }
+
+    @Test
+    void usageErrorsExitWith64(@TempDir Path tmp) throws Exception {
+        Path planFile = tmp.resolve("plan.json");
+        Planner.plan(TestRepos.create(tmp.resolve("rrd")), new RrdOpener(RrdOpener.Mode.NATIVE, null),
+                new LabelIndex(), null, false).save(planFile);
+        assertThat(Main.run("backfill")).isEqualTo(64);
+        assertThat(Main.run("backfill", "--plan", planFile.toString(), "--write-url", "http://127.0.0.1:1/w",
+                "--batch-samples", "0")).isEqualTo(64);
+        assertThat(Main.run("backfill", "--plan", planFile.toString(), "--write-url", "http://127.0.0.1:1/w",
+                "--max-retries", "-1")).isEqualTo(64);
+        assertThat(Main.run("backfill", "--plan", planFile.toString(), "--write-url", "http://127.0.0.1:1/w",
+                "--threads", "0")).isEqualTo(64);
+        assertThat(Main.run("backfill", "--plan", planFile.toString(), "--state-dir", tmp.toString())).isEqualTo(64);
+    }
 }
