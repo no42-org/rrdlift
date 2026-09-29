@@ -26,7 +26,8 @@ class PlanCommandTest {
         Path orphans = tmp.resolve("orphans.txt");
 
         int exit = Main.run("plan", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
-                "--out", plan.toString(), "--orphans", orphans.toString());
+                "--out", plan.toString(), "--orphans", orphans.toString(),
+                "--not-migrated", tmp.resolve("not-migrated.txt").toString());
 
         assertThat(exit).isZero();
         assertThat(Plan.load(plan).entries()).hasSize(10);
