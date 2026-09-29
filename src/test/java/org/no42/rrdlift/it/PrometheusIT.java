@@ -52,6 +52,6 @@ class PrometheusIT {
     @Test
     void migratesHistoryIntoPrometheus(@TempDir Path tmp) throws Exception {
         URI base = base(prometheus);
-        Migration.run(tmp, URI.create(base + "/api/v1/write"), base, () -> { });
+        Migration.run(tmp, URI.create(base + "/api/v1/write"), base, () -> { }, 0);
     }
 }

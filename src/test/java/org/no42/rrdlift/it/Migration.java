@@ -29,7 +29,7 @@ final class Migration {
 
     private Migration() {}
 
-    static void run(Path tmp, URI writeUrl, URI readUrl, Runnable flush) throws Exception {
+    static void run(Path tmp, URI writeUrl, URI readUrl, Runnable flush, double tolerance) throws Exception {
         Path repo = TestRepos.create(tmp.resolve("rrd"));
         String w = writeUrl.toString();
         String r = readUrl.toString();
@@ -59,7 +59,7 @@ final class Migration {
         flush.run();
 
         assertThat(Main.run("verify", "--plan", planFile.toString(), "--read-url", r,
-                "--state-dir", tmp.toString(), "--all")).isZero();
+                "--state-dir", tmp.toString(), "--all", "--tolerance", String.valueOf(tolerance))).isZero();
 
         // History joined the live series: the series with the meta tag now reaches back months.
         long lastUpdate = NativeRrdtoolReader.read(Fixtures.path("aarch64", "icmp.rrd")).lastUpdate();
