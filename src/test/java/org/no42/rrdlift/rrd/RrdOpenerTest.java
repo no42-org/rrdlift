@@ -10,6 +10,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -48,5 +51,35 @@ class RrdOpenerTest {
         assertThatThrownBy(() -> opener.open(Fixtures.path("aarch64", "icmp.rrd")))
                 .isInstanceOf(IOException.class)
                 .hasMessageContaining("--rrdtool");
+    }
+
+    @Test
+    void rrdtoolDumpStderrCapturedOnError(@TempDir Path tmp) throws Exception {
+        Path fake = tmp.resolve("fake-rrdtool");
+        Files.writeString(fake, "#!/bin/sh\necho 'ERROR: not an RRD file' >&2\nexit 1\n");
+        Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxr-xr-x");
+        Files.setPosixFilePermissions(fake, perms);
+
+        RrdOpener opener = new RrdOpener(RrdOpener.Mode.RRDTOOL, fake);
+        assertThatThrownBy(() -> opener.open(Fixtures.path("aarch64", "icmp.rrd")))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("exit")
+                .hasMessageContaining("1")
+                .hasMessageContaining("ERROR: not an RRD file");
+    }
+
+    @Test
+    void rrdtoolDumpSuccessfulRead(@TempDir Path tmp) throws Exception {
+        Path fake = tmp.resolve("fake-rrdtool");
+        Path xmlPath = Fixtures.path("aarch64", "icmp.xml");
+        String xmlContent = Files.readString(xmlPath);
+        Files.writeString(fake, "#!/bin/sh\ncat " + xmlPath + "\nexit 0\n");
+        Set<PosixFilePermission> perms = PosixFilePermissions.fromString("rwxr-xr-x");
+        Files.setPosixFilePermissions(fake, perms);
+
+        RrdOpener opener = new RrdOpener(RrdOpener.Mode.RRDTOOL, fake);
+        RrdFile rrd = opener.open(Fixtures.path("aarch64", "icmp.rrd"));
+        assertThat(rrd.version()).isEqualTo("0003");
+        assertThat(rrd.step()).isEqualTo(300);
     }
 }
