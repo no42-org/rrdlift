@@ -7,6 +7,8 @@ package org.no42.rrdlift.plan;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.function.Function;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.no42.rrdlift.labels.LabelIndex;
 import org.no42.rrdlift.repo.TestRepos;
+import org.no42.rrdlift.rrd.Fixtures;
 import org.no42.rrdlift.rrd.RrdOpener;
 
 class PlannerTest {
@@ -85,6 +88,23 @@ class PlannerTest {
                 .extracting(PlanEntry::resourceId).containsExactly("snmp/9/bad");
         assertThat(plan.entries()).filteredOn(p -> p.entryClass() == EntryClass.SKIPPED)
                 .extracting(PlanEntry::note).containsExactly("no group information");
+    }
+
+    @Test
+    void corruptHeaderFailsOnlyThatFile(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp);
+        Path dir = Files.createDirectories(repo.resolve("snmp/8"));
+        Files.writeString(dir.resolve("ds.properties"), "a=corrupt\n");
+        byte[] bytes = Files.readAllBytes(Fixtures.path("aarch64", "icmp.rrd"));
+        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).putLong(24, -1L);
+        Files.write(dir.resolve("corrupt.rrd"), bytes);
+
+        Plan plan = Planner.plan(repo, OPENER, new LabelIndex(), null, false);
+        assertThat(plan.entries()).filteredOn(p -> p.entryClass() == EntryClass.FAILED_READ)
+                .extracting(PlanEntry::resourceId).containsExactly("snmp/8/corrupt");
+        assertThat(plan.entries()).filteredOn(p -> p.entryClass() == EntryClass.FAILED_READ)
+                .allSatisfy(p -> assertThat(p.note()).isNotBlank());
+        assertThat(plan.entries()).filteredOn(p -> p.entryClass() == EntryClass.ORPHAN).hasSize(10);
     }
 
     @Test

@@ -40,16 +40,16 @@ public final class Planner {
         for (WorkItem item : walk.items()) {
             String file = item.file().toString();
             RrdFile rrd;
+            Map<String, Series> series = new HashMap<>();
             try {
                 rrd = opener.open(item.file());
-            } catch (IOException e) {
-                entries.add(new PlanEntry(file, item.resourceId(), null, null, EntryClass.FAILED_READ, null, 0,
-                        e.getMessage()));
+                for (Series s : SampleGenerator.generate(rrd, Pass.ALL)) {
+                    series.put(s.dsName(), s);
+                }
+            } catch (IOException | RuntimeException e) {
+                String note = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                entries.add(new PlanEntry(file, item.resourceId(), null, null, EntryClass.FAILED_READ, null, 0, note));
                 continue;
-            }
-            Map<String, Series> series = new HashMap<>();
-            for (Series s : SampleGenerator.generate(rrd, Pass.ALL)) {
-                series.put(s.dsName(), s);
             }
             for (DataSource ds : rrd.dataSources()) {
                 if (!SampleGenerator.supported(ds)) {
@@ -87,10 +87,11 @@ public final class Planner {
                     }
                 }
                 Series s = series.get(ds.name());
-                if (labels != null && s.size() > 0) {
+                if (labels != null && s != null && s.size() > 0) {
                     oldest = Math.min(oldest, s.timesMs()[0] / 1000);
                 }
-                entries.add(new PlanEntry(file, item.resourceId(), ds.name(), mtype, cls, labels, s.size(), note));
+                entries.add(new PlanEntry(file, item.resourceId(), ds.name(), mtype, cls, labels,
+                        s == null ? 0 : s.size(), note));
             }
         }
         return new Plan(rrdDir.toString(), System.currentTimeMillis() / 1000,
