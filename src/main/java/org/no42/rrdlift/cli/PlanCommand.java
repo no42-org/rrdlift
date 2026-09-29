@@ -7,7 +7,10 @@ package org.no42.rrdlift.cli;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -49,6 +52,10 @@ public final class PlanCommand implements Callable<Integer> {
     @Option(names = "--orphans", defaultValue = "orphans.txt")
     Path orphans;
 
+    @Option(names = "--not-migrated", defaultValue = "not-migrated.txt",
+            description = "Tab-separated list of every data source or file that will not be written")
+    Path notMigrated;
+
     @Override
     public Integer call() {
         try {
@@ -56,6 +63,7 @@ public final class PlanCommand implements Callable<Integer> {
             Plan plan = Planner.plan(rrdDir, readerOptions.opener(), LabelIndex.load(labels), onms, skipOrphans);
             plan.save(out);
             TreeSet<String> orphanIds = new TreeSet<>();
+            List<String> unwritten = new ArrayList<>();
             Map<EntryClass, Integer> counts = new EnumMap<>(EntryClass.class);
             Map<String, Integer> byRoot = new TreeMap<>();
             long samples = 0;
@@ -69,9 +77,18 @@ public final class PlanCommand implements Callable<Integer> {
                 }
                 if (e.labels() != null) {
                     samples += e.samples();
+                } else {
+                    unwritten.add(String.join("\t", e.entryClass().name(),
+                            e.resourceId() != null ? e.resourceId() : e.file(),
+                            e.dsName() != null ? e.dsName() : "", e.note() != null ? e.note() : ""));
                 }
             }
             Files.write(orphans, orphanIds);
+            Collections.sort(unwritten);
+            List<String> notMigratedLines = new ArrayList<>();
+            notMigratedLines.add("# class\tresource\tds\tnote");
+            notMigratedLines.addAll(unwritten);
+            Files.write(notMigrated, notMigratedLines);
             System.out.printf("plan: %d files, %d entries%n", plan.writableByFile().size(), plan.entries().size());
             StringBuilder classes = new StringBuilder(" ");
             for (EntryClass c : EntryClass.values()) {
@@ -84,6 +101,7 @@ public final class PlanCommand implements Callable<Integer> {
                     samples, plan.oldestSampleSec() == 0 ? "none" : Instant.ofEpochSecond(plan.oldestSampleSec()),
                     rate, seconds / 3600, seconds % 3600 / 60);
             System.out.printf("  plan -> %s, orphans -> %s (%d resources)%n", out, orphans, orphanIds.size());
+            System.out.printf("  not migrated -> %s (%d lines)%n", notMigrated, unwritten.size());
             return 0;
         } catch (Exception e) {
             System.err.println("plan: " + e.getMessage());
