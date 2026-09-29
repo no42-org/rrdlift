@@ -50,6 +50,6 @@ class VictoriaMetricsIT {
                 Thread.currentThread().interrupt();
             }
         };
-        Migration.run(tmp, URI.create(base + "/api/v1/write"), base, flush);
+        Migration.run(tmp, URI.create(base + "/api/v1/write"), base, flush, 1e-11);
     }
 }

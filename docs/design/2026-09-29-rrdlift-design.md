@@ -60,7 +60,7 @@ Every live series has a sample at "now", so every backfilled sample is out of or
 |---|---|
 | Prometheus | `--web.enable-remote-write-receiver`. `storage.tsdb.out_of_order_time_window` longer than the oldest RRD sample. Without it Prometheus rejects old samples as out of order or out of bounds, including the first sample of a new series. |
 | Mimir, Cortex, Thanos Receive | Out-of-order window per tenant, same TSDB rules. Check the version for support. |
-| VictoriaMetrics | No ordering rules. `-retentionPeriod` must cover the oldest sample, because older samples are dropped silently. Reset the rollup cache after the backfill (`/internal/resetRollupResultCache`) or run with `-search.disableCache` during it. Instant queries do not return a sample at exactly its timestamp, and samples newer than `-search.latencyOffset` (default 30s) are hidden, so rrdlift reads back with range selectors. |
+| VictoriaMetrics | No ordering rules. `-retentionPeriod` must cover the oldest sample, because older samples are dropped silently. Reset the rollup cache after the backfill (`/internal/resetRollupResultCache`) or run with `-search.disableCache` during it. Instant queries do not return a sample at exactly its timestamp, and samples newer than `-search.latencyOffset` (default 30s) are hidden, so rrdlift reads back with range selectors. VictoriaMetrics keeps about 12 significant digits, so verify it with `--tolerance 1e-11`. |
 | Managed services | Check the provider's out-of-order and age limits. |
 
 For all backends, retention must be longer than the oldest RRD sample.
@@ -227,6 +227,11 @@ Pass 2 starts after pass 1 has finished for every file.
 - Reads them back with `query_range` at the raw step for each RRA segment.
 - Gauges must match exactly.
   Counters must match on consecutive deltas.
+- `--tolerance` (default 0, exact) is relative to the stored values.
+  Gauges compare with it directly.
+  For counters, the allowed delta error is the tolerance times the largest of the four values involved (two expected, two stored).
+  The error that storage precision puts on a delta scales with the counter value, not with the delta.
+- VictoriaMetrics keeps about 12 significant digits, so verify it with `--tolerance 1e-11`.
 - Default selection: 1% random files plus every file that needed a retry.
 - Reports totals, done, failed, orphans, ambiguous, mismatches.
 
