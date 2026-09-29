@@ -31,6 +31,9 @@ The backend must accept such out-of-order samples as far back as your oldest RRD
 
 `rrdlift preflight` checks this before anything is written.
 
+A Prometheus out-of-order window of a year raises memory use and compaction load while the backfill runs.
+Use a moderate `--rate`, or prefer VictoriaMetrics or Mimir for very large repositories.
+
 ## Workflow
 
 1. Stop OpenNMS, set `org.opennms.timeseries.strategy=integration`, install and configure the Prometheus remote-write plugin, start OpenNMS.

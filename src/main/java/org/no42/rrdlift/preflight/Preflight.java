@@ -56,8 +56,9 @@ public final class Preflight {
         }
 
         if (!readsBack(client, selector, currentSec, 1, readAttempts, readDelayMs)) {
-            failures.add("a sample written now cannot be read back through --read-url /api/v1/query. "
-                    + "VictoriaMetrics hides samples newer than -search.latencyOffset (default 30s).");
+            failures.add("a probe sample 60 s old cannot be read back through --read-url with a range selector "
+                    + "(" + selector + "[3600s]). Check --read-url and --org-id. The probe is 60 s old so that "
+                    + "VictoriaMetrics -search.latencyOffset (default 30s) does not hide it. A larger offset hides it.");
         }
         if (oldWritten && !readsBack(client, selector, oldestSec, 2, readAttempts, readDelayMs)) {
             failures.add("a sample from " + Instant.ofEpochSecond(oldestSec) + " was accepted but cannot be read back. "
