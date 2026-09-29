@@ -101,11 +101,25 @@ class VerifierTest {
 
     @Test
     void selectionIncludesRetriedFiles() throws Exception {
-        String icmp = plan.entries().stream().filter(p -> "icmp".equals(p.dsName())).findFirst().orElseThrow().file();
-        Checkpoint cp = new Checkpoint(tmp);
-        cp.append(new Checkpoint.Entry(icmp, "OLDER", Checkpoint.Status.DONE, 1, 3, null));
-        assertThat(Verifier.select(plan, cp, false, 0, 1)).contains(icmp);
-        assertThat(Verifier.select(plan, cp, true, 0, 1)).containsExactlyInAnyOrderElementsOf(allFiles());
+        List<String> files = allFiles();
+        Checkpoint empty = new Checkpoint(tmp.resolve("empty"));
+        List<String> sampled = Verifier.select(plan, empty, false, 0, 1);
+        assertThat(sampled).hasSize(1);
+        assertThat(Verifier.select(plan, empty, false, 0, 1)).isEqualTo(sampled);
+        String other = files.stream().filter(f -> !f.equals(sampled.get(0))).findFirst().orElseThrow();
+
+        Checkpoint cp = new Checkpoint(tmp.resolve("retried"));
+        cp.append(new Checkpoint.Entry(other, "OLDER", Checkpoint.Status.DONE, 1, 3, null));
+        List<String> selected = Verifier.select(plan, cp, false, 0, 1);
+        assertThat(selected).hasSize(2).contains(other, sampled.get(0));
+        assertThat(Verifier.select(plan, cp, false, 0, 1)).isEqualTo(selected);
+
+        Checkpoint same = new Checkpoint(tmp.resolve("same"));
+        same.append(new Checkpoint.Entry(sampled.get(0), "OLDER", Checkpoint.Status.DONE, 1, 3, null));
+        assertThat(Verifier.select(plan, same, false, 0, 1)).containsExactly(sampled.get(0));
+
+        assertThat(Verifier.select(plan, cp, true, 0, 1)).containsExactlyInAnyOrderElementsOf(files);
+        assertThat(Verifier.select(plan, empty, false, 150, 1)).containsExactlyInAnyOrderElementsOf(files);
     }
 
     @Test

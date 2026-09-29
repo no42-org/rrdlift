@@ -56,7 +56,8 @@ public final class Verifier {
                     .filter(known::contains).forEach(selected::add);
         }
         Collections.shuffle(files, new Random(seed));
-        int n = files.isEmpty() ? 0 : Math.max(1, (int) Math.ceil(files.size() * percent / 100));
+        int n = files.isEmpty() ? 0
+                : Math.min(files.size(), Math.max(1, (int) Math.ceil(files.size() * percent / 100)));
         selected.addAll(files.subList(0, n));
         return List.copyOf(selected);
     }
