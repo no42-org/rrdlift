@@ -6,12 +6,15 @@ package org.no42.rrdlift.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.no42.rrdlift.Main;
 import org.no42.rrdlift.prom.FakeBackend;
 import org.no42.rrdlift.repo.TestRepos;
+import org.no42.rrdlift.rrd.Fixtures;
 
 class PreflightCommandTest {
 
@@ -34,6 +37,31 @@ class PreflightCommandTest {
         try (FakeBackend backend = FakeBackend.start()) {
             backend.rejectOlderThanMs(System.currentTimeMillis() - 3600_000L);
             int exit = Main.run("preflight", "--rrd-dir", repo.toString(),
+                    "--write-url", backend.writeUrl().toString(), "--read-url", backend.readUrl().toString());
+            assertThat(exit).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void skipsUnreadableFileAndStillPasses(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp);
+        Path badDir = Files.createDirectories(repo.resolve("snmp/bad/store"));
+        Files.writeString(badDir.resolve("ds.properties"), "x=bad\n");
+        byte[] badRrd = Files.readAllBytes(Fixtures.path("aarch64", "icmp.rrd"));
+        ByteBuffer buf = ByteBuffer.wrap(badRrd);
+        buf.putLong(24, -1L);
+        Files.write(badDir.resolve("bad.rrd"), badRrd);
+        try (FakeBackend backend = FakeBackend.start()) {
+            int exit = Main.run("preflight", "--rrd-dir", repo.toString(),
+                    "--write-url", backend.writeUrl().toString(), "--read-url", backend.readUrl().toString());
+            assertThat(exit).isZero();
+        }
+    }
+
+    @Test
+    void emptyRepositoryExitsOne(@TempDir Path tmp) throws Exception {
+        try (FakeBackend backend = FakeBackend.start()) {
+            int exit = Main.run("preflight", "--rrd-dir", tmp.toString(),
                     "--write-url", backend.writeUrl().toString(), "--read-url", backend.readUrl().toString());
             assertThat(exit).isEqualTo(1);
         }
