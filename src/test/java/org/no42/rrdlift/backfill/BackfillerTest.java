@@ -14,6 +14,8 @@ import java.nio.file.Files;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -159,5 +161,39 @@ class BackfillerTest {
 
         int firstFileEntries = plan.writableByFile().values().iterator().next().size();
         assertThat(backend.writeCount()).isPositive().isLessThanOrEqualTo(firstFileEntries);
+    }
+
+    @Test
+    void backoffDoublesFromOneSecondAndCapsAtSixtySeconds() throws Exception {
+        List<Long> sleeps = new ArrayList<>();
+        backend.failNextWrites(71, 503);
+        Backfiller b = new Backfiller(new PromClient(backend.writeUrl(), null, null), OPENER, new Checkpoint(tmp),
+                new RateLimiter(0), 1, 2000, 70, sleeps::add, QUIET);
+
+        assertThat(b.run(plan, false).paused()).isTrue();
+
+        assertThat(sleeps).hasSize(70);
+        assertThat(sleeps.subList(0, 8).stream().map(n -> n / 1_000_000_000L))
+                .containsExactly(1L, 2L, 4L, 8L, 16L, 32L, 60L, 60L);
+        assertThat(sleeps).allMatch(n -> n > 0 && n <= 60_000_000_000L);
+        assertThat(sleeps.get(69)).isEqualTo(60_000_000_000L);
+    }
+
+    @Test
+    void plannedDataSourceMissingFromFileFailsTheFile() throws Exception {
+        PlanEntry icmp = plan.entries().stream().filter(e -> "icmp".equals(e.dsName())).findFirst().orElseThrow();
+        List<PlanEntry> entries = new ArrayList<>(plan.entries());
+        entries.set(entries.indexOf(icmp), new PlanEntry(icmp.file(), icmp.resourceId(), "gone", icmp.mtype(),
+                icmp.entryClass(), icmp.labels(), icmp.samples(), icmp.note()));
+        Plan changed = new Plan(plan.rrdDir(), plan.createdAt(), plan.oldestSampleSec(), entries);
+
+        Backfiller.Outcome outcome = backfiller(2000, 0).run(changed, false);
+
+        assertThat(outcome.failed()).isPositive();
+        for (String pass : List.of("RECENT", "OLDER")) {
+            Checkpoint.Entry e = new Checkpoint(tmp).load(pass).get(icmp.file());
+            assertThat(e.status()).isEqualTo(Checkpoint.Status.FAILED);
+            assertThat(e.error()).isEqualTo("planned data source gone missing from file");
+        }
     }
 }

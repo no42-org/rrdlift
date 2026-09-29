@@ -147,6 +147,12 @@ public final class Backfiller {
             String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             return record(file, pass, Checkpoint.Status.FAILED, 0, 1, "read: " + message);
         }
+        for (PlanEntry e : entries) {
+            if (!byDs.containsKey(e.dsName())) {
+                return record(file, pass, Checkpoint.Status.FAILED, 0, 1,
+                        "planned data source " + e.dsName() + " missing from file");
+            }
+        }
         List<TimeSeries> batch = new ArrayList<>();
         int inBatch = 0;
         long written = 0;
@@ -154,9 +160,6 @@ public final class Backfiller {
         try {
             for (PlanEntry e : entries) {
                 Series s = byDs.get(e.dsName());
-                if (s == null) {
-                    continue;
-                }
                 for (int from = 0; from < s.size(); from += batchSamples) {
                     int to = Math.min(s.size(), from + batchSamples);
                     if (inBatch + (to - from) > batchSamples && !batch.isEmpty()) {
@@ -197,10 +200,15 @@ public final class Backfiller {
                 last = e;
             }
             if (attempt <= maxRetries) {
-                backoff.sleepNanos(TimeUnit.SECONDS.toNanos(1L << (attempt - 1)));
+                backoff.sleepNanos(TimeUnit.SECONDS.toNanos(backoffSeconds(attempt)));
             }
         }
         throw new PauseException("backend unavailable after " + (maxRetries + 1) + " attempts: " + last.getMessage(), last);
+    }
+
+    /** 1 s, 2 s, 4 s ... capped at 60 s; the shift is capped first so large attempts cannot overflow. */
+    static long backoffSeconds(int attempt) {
+        return Math.min(60L, 1L << Math.min(attempt - 1, 6));
     }
 
     private Checkpoint.Entry record(String file, Pass pass, Checkpoint.Status status, long samples, int attempts,
