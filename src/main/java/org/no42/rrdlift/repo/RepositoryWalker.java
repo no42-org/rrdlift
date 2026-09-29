@@ -7,10 +7,15 @@ package org.no42.rrdlift.repo;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitOption;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
@@ -34,13 +39,21 @@ public final class RepositoryWalker {
             if (!Files.isDirectory(top)) {
                 continue;
             }
-            List<Path> dirs;
-            try (Stream<Path> s = Files.walk(top)) {
-                dirs = s.filter(Files::isDirectory).sorted().collect(Collectors.toList());
-            }
-            for (Path dir : dirs) {
-                walkDirectory(rrdDir, dir, items, skipped);
-            }
+            Files.walkFileTree(top, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE,
+                    new SimpleFileVisitor<>() {
+                        @Override
+                        public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                            walkDirectory(rrdDir, dir, items, skipped);
+                            return FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
+                        public FileVisitResult visitFileFailed(Path file, IOException e) {
+                            String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                            skipped.add(new WalkResult.Skipped(file, "cannot read: " + message));
+                            return FileVisitResult.CONTINUE;
+                        }
+                    });
         }
         items.sort(Comparator.comparing(WorkItem::file));
         skipped.sort(Comparator.comparing(WalkResult.Skipped::file));
