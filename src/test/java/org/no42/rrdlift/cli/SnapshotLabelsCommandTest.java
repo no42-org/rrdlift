@@ -53,4 +53,11 @@ class SnapshotLabelsCommandTest {
                 "--read-url", "http://127.0.0.1:1", "--out", tmp.resolve("x.json").toString());
         assertThat(exit).isEqualTo(1);
     }
+
+    @Test
+    void missingReadUrlExitsWith64(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp.resolve("rrd"));
+        assertThat(Main.run("snapshot-labels", "--rrd-dir", repo.toString(),
+                "--out", tmp.resolve("x.json").toString())).isEqualTo(64);
+    }
 }
