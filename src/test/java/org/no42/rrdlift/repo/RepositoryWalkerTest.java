@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -118,5 +119,43 @@ class RepositoryWalkerTest {
                 .containsExactly("listed in .meta but no .rrd or .jrb file");
         assertThat(result.skipped()).extracting(WalkResult.Skipped::file)
                 .containsExactly(dir.resolve("ifInOctets"));
+    }
+
+    static boolean symlink(Path link, Path target) {
+        try {
+            Files.createSymbolicLink(link, target);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Test
+    void followsSymlinkedNodeDirectories(@TempDir Path tmp) throws Exception {
+        Path target = Files.createDirectories(tmp.resolve("elsewhere/9/eth0"));
+        Files.writeString(target.resolve("ds.properties"), "ifInOctets=mib2-interfaces\n");
+        Files.copy(org.no42.rrdlift.rrd.Fixtures.path("aarch64", "grp.rrd"), target.resolve("mib2-interfaces.rrd"));
+        Path snmp = Files.createDirectories(tmp.resolve("rrd/snmp"));
+        Assumptions.assumeTrue(symlink(snmp.resolve("9"), tmp.resolve("elsewhere/9")), "symlinks not supported");
+
+        WalkResult result = RepositoryWalker.walk(tmp.resolve("rrd"));
+        assertThat(result.items()).extracting(WorkItem::resourceId).containsExactly("snmp/9/eth0/mib2-interfaces");
+        assertThat(result.items().get(0).file()).isEqualTo(snmp.resolve("9/eth0/mib2-interfaces.rrd"));
+        assertThat(result.skipped()).isEmpty();
+    }
+
+    @Test
+    void reportsSymlinkLoopAsSkipped(@TempDir Path tmp) throws Exception {
+        Path node = Files.createDirectories(tmp.resolve("snmp/10"));
+        Files.writeString(node.resolve("ds.properties"), "ifInOctets=mib2-interfaces\n");
+        Files.write(node.resolve("mib2-interfaces.rrd"), new byte[] {0});
+        Assumptions.assumeTrue(symlink(node.resolve("loop"), node), "symlinks not supported");
+
+        WalkResult result = RepositoryWalker.walk(tmp);
+        assertThat(result.items()).extracting(WorkItem::resourceId).containsExactly("snmp/10/mib2-interfaces");
+        assertThat(result.skipped()).singleElement().satisfies(s -> {
+            assertThat(s.file()).isEqualTo(node.resolve("loop"));
+            assertThat(s.reason()).startsWith("cannot read: ");
+        });
     }
 }
