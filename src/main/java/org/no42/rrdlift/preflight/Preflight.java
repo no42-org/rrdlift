@@ -33,10 +33,11 @@ public final class Preflight {
         List<String> failures = new ArrayList<>();
         Map<String, String> probe = Map.of("__name__", "rrdlift_probe", "run", UUID.randomUUID().toString());
         String selector = Selectors.exact(probe);
+        long currentSec = nowSec - 60;
         long days = (nowSec - oldestSec + 86399) / 86400;
 
         try {
-            client.write(List.of(new TimeSeries(probe, new long[] {nowSec * 1000}, new double[] {1})));
+            client.write(List.of(new TimeSeries(probe, new long[] {currentSec * 1000}, new double[] {1})));
         } catch (IOException e) {
             failures.add("remote write of a current sample failed (" + e.getMessage() + "). Check --write-url, "
                     + "that the remote-write receiver is enabled (Prometheus: --web.enable-remote-write-receiver) "
@@ -54,8 +55,9 @@ public final class Preflight {
                     + " days and retention longer than that.");
         }
 
-        if (!readsBack(client, selector, nowSec, 1, readAttempts, readDelayMs)) {
-            failures.add("a sample written now cannot be read back through --read-url /api/v1/query.");
+        if (!readsBack(client, selector, currentSec, 1, readAttempts, readDelayMs)) {
+            failures.add("a sample written now cannot be read back through --read-url /api/v1/query. "
+                    + "VictoriaMetrics hides samples newer than -search.latencyOffset (default 30s).");
         }
         if (oldWritten && !readsBack(client, selector, oldestSec, 2, readAttempts, readDelayMs)) {
             failures.add("a sample from " + Instant.ofEpochSecond(oldestSec) + " was accepted but cannot be read back. "
@@ -76,8 +78,7 @@ public final class Preflight {
                                      int attempts, long delayMs) {
         for (int attempt = 1; attempt <= attempts; attempt++) {
             try {
-                if (client.query(selector, timeSec).stream()
-                        .anyMatch(r -> r.values().length > 0 && r.values()[r.values().length - 1] == expected)) {
+                if (client.query(selector + "[3600s]", timeSec + 60).stream().anyMatch(r -> hasSample(r, timeSec, expected))) {
                     return true;
                 }
             } catch (IOException e) {
@@ -90,6 +91,15 @@ public final class Preflight {
                     Thread.currentThread().interrupt();
                     return false;
                 }
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasSample(PromClient.QueryResult r, long timeSec, double expected) {
+        for (int i = 0; i < r.timesMs().length; i++) {
+            if (r.timesMs()[i] == timeSec * 1000 && r.values()[i] == expected) {
+                return true;
             }
         }
         return false;

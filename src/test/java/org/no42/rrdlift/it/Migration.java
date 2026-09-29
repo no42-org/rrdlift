@@ -36,7 +36,7 @@ final class Migration {
         PromClient client = new PromClient(writeUrl, readUrl, null);
 
         // What OpenNMS writes live after the cutover, with a meta tag the RRD files know nothing about.
-        long now = System.currentTimeMillis() - 60_000;
+        long now = System.currentTimeMillis();
         client.write(List.of(new TimeSeries(LIVE_ICMP, new long[] {now}, new double[] {7.5})));
         flush.run();
 

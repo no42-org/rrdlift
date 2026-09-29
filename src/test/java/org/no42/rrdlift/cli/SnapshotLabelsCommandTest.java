@@ -27,7 +27,7 @@ class SnapshotLabelsCommandTest {
         Path out = tmp.resolve("labels.json");
         try (FakeBackend backend = FakeBackend.start()) {
             PromClient client = new PromClient(backend.writeUrl(), backend.readUrl(), null);
-            long nowMs = (System.currentTimeMillis() / 1000) * 1000;  // Round down to nearest second
+            long nowMs = System.currentTimeMillis();
             Map<String, String> icmp = Map.of("__name__", "icmp", "resourceId", "response/10.0.0.1/icmp",
                     "mtype", "gauge", "node", "n1");
             Map<String, String> foreign = Map.of("__name__", "icmp", "resourceId", "response/10.0.0.10/icmp",

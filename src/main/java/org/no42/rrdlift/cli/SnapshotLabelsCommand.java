@@ -44,7 +44,7 @@ public final class SnapshotLabelsCommand implements Callable<Integer> {
             long now = System.currentTimeMillis() / 1000;
             LabelIndex index = new LabelIndex();
             for (String prefix : prefixes) {
-                client.series(Selectors.resourcePrefix(prefix), now - sinceDays * 86400L, now).forEach(index::add);
+                client.series(Selectors.resourcePrefix(prefix), now - sinceDays * 86400L, now + 1).forEach(index::add);
             }
             index.save(out);
             System.out.printf("snapshot-labels: %d label sets for %d keys from %d node directories -> %s%n",
