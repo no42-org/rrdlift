@@ -170,6 +170,9 @@ With default RRAs one data source yields 2016 + 1320 + 304 = 3,640 samples.
 4. **Orphan:** no source. Written with minimal labels `__name__`, `resourceId`, `mtype`, or skipped with `--skip-orphans`.
    Also written to `orphans.txt` as input for `opennms:tss-export-labels`.
 
+A matched or exported label set whose `mtype` label differs from the data source type (`count` for COUNTER and DERIVE, `gauge` for GAUGE) is not written.
+The entry is classed `MTYPE_MISMATCH` and listed.
+
 The report states counts per class, per top-level directory, and the estimated sample count and duration at the configured rate.
 Nothing is written to the backend by `plan`.
 
