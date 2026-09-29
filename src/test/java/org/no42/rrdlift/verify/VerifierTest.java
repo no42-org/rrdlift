@@ -88,6 +88,20 @@ class VerifierTest {
     }
 
     @Test
+    void counterToleranceScalesWithValueMagnitude() {
+        TreeMap<Long, Double> octets = stored("ifHCInOctets");
+        Long mid = octets.keySet().stream().skip(octets.size() / 2).findFirst().orElseThrow();
+        double original = octets.get(mid);
+        octets.put(mid, original + 1024);
+        assertThat(octets.get(mid)).isNotEqualTo(original);
+
+        assertThat(new Verifier(client, OPENER, 0).verify(plan, allFiles()).mismatches())
+                .filteredOn(m -> m.kind().equals("delta") && "ifHCInOctets".equals(m.dsName())).isNotEmpty();
+        assertThat(new Verifier(client, OPENER, 1e-11).verify(plan, allFiles()).mismatches())
+                .filteredOn(m -> "ifHCInOctets".equals(m.dsName())).isEmpty();
+    }
+
+    @Test
     void ignoresSeriesWithExtraLabels() throws Exception {
         PlanEntry e = plan.entries().stream().filter(p -> "icmp".equals(p.dsName())).findFirst().orElseThrow();
         Map<String, String> superset = new TreeMap<>(e.labels());
