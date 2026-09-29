@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.xerial.snappy.Snappy;
@@ -37,6 +38,7 @@ public final class FakeBackend implements AutoCloseable {
     private final Map<Map<String, String>, TreeMap<Long, Double>> data = new ConcurrentHashMap<>();
     private final List<String> requests = Collections.synchronizedList(new ArrayList<>());
     private final AtomicInteger writes = new AtomicInteger();
+    private final AtomicLong samplesReceived = new AtomicLong();
     private volatile long rejectOlderThanMs = Long.MIN_VALUE;
     private volatile long dropOlderThanMs = Long.MIN_VALUE;
     private volatile int failWrites;
@@ -75,6 +77,10 @@ public final class FakeBackend implements AutoCloseable {
 
     public int writeCount() {
         return writes.get();
+    }
+
+    public long samplesReceived() {
+        return samplesReceived.get();
     }
 
     public void rejectOlderThanMs(long ms) {
@@ -119,6 +125,7 @@ public final class FakeBackend implements AutoCloseable {
                         }
                     } else if (t >= dropOlderThanMs) {
                         points.put(t, ts.values()[i]);
+                        samplesReceived.incrementAndGet();
                     }
                 }
             }
