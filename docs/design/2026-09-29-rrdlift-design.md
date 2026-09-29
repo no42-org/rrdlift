@@ -60,7 +60,7 @@ Every live series has a sample at "now", so every backfilled sample is out of or
 |---|---|
 | Prometheus | `--web.enable-remote-write-receiver`. `storage.tsdb.out_of_order_time_window` longer than the oldest RRD sample. Without it Prometheus rejects old samples as out of order or out of bounds, including the first sample of a new series. |
 | Mimir, Cortex, Thanos Receive | Out-of-order window per tenant, same TSDB rules. Check the version for support. |
-| VictoriaMetrics | No ordering rules. `-retentionPeriod` must cover the oldest sample, because older samples are dropped silently. Reset the rollup cache after the backfill (`/internal/resetRollupResultCache`) or run with `-search.disableCache` during it. |
+| VictoriaMetrics | No ordering rules. `-retentionPeriod` must cover the oldest sample, because older samples are dropped silently. Reset the rollup cache after the backfill (`/internal/resetRollupResultCache`) or run with `-search.disableCache` during it. Instant queries do not return a sample at exactly its timestamp, and samples newer than `-search.latencyOffset` (default 30s) are hidden, so rrdlift reads back with range selectors. |
 | Managed services | Check the provider's out-of-order and age limits. |
 
 For all backends, retention must be longer than the oldest RRD sample.
@@ -191,9 +191,11 @@ This is a separate Jira story for the next Horizon release; the tool works witho
 
 `preflight` refuses to start the backfill unless all checks pass:
 
-1. Remote write to `<writeUrl>` accepted for a sample at now on series `rrdlift_probe{run="<uuid>"}`.
+1. Remote write to `<writeUrl>` accepted for a sample at 60 s in the past on series `rrdlift_probe{run="<uuid>"}`.
 2. Remote write accepted for a sample on the same series at the oldest timestamp the plan will write.
-3. Both samples read back through `query_range`.
+3. Both samples read back with a range selector (`rrdlift_probe{run="<uuid>"}[3600s]`, evaluated 60 s after the sample).
+   The read-back requires a raw sample at exactly the written timestamp with the written value.
+   The current probe sample is written 60 s in the past, so that VictoriaMetrics `-search.latencyOffset` does not hide it.
    This catches VictoriaMetrics silently dropping samples beyond retention.
 4. The query API answers `/api/v1/series`.
 
