@@ -107,23 +107,25 @@ public final class FakeBackend implements AutoCloseable {
             }
         }
         List<TimeSeries> series = RemoteWriteEncoder.decode(body);
-        for (TimeSeries ts : series) {
-            for (long t : ts.timesMs()) {
-                if (t < rejectOlderThanMs) {
-                    respond(ex, 400, "out of bounds: sample at " + t);
-                    return;
-                }
-            }
-        }
+        Long rejected = null;
         for (TimeSeries ts : series) {
             TreeMap<Long, Double> points = data.computeIfAbsent(new TreeMap<>(ts.labels()), k -> new TreeMap<>());
             synchronized (points) {
                 for (int i = 0; i < ts.timesMs().length; i++) {
-                    if (ts.timesMs()[i] >= dropOlderThanMs) {
-                        points.put(ts.timesMs()[i], ts.values()[i]);
+                    long t = ts.timesMs()[i];
+                    if (t < rejectOlderThanMs) {
+                        if (rejected == null) {
+                            rejected = t;
+                        }
+                    } else if (t >= dropOlderThanMs) {
+                        points.put(t, ts.values()[i]);
                     }
                 }
             }
+        }
+        if (rejected != null) {
+            respond(ex, 400, "out of bounds: sample at " + rejected);
+            return;
         }
         respond(ex, 204, "");
     }
@@ -131,11 +133,23 @@ public final class FakeBackend implements AutoCloseable {
     private void series(HttpExchange ex) throws IOException {
         Map<String, String> q = params(ex);
         requests.add("GET series " + q.get("match[]"));
+        long startMs = q.containsKey("start") ? Math.round(Double.parseDouble(q.get("start")) * 1000) : Long.MIN_VALUE;
+        long endMs = q.containsKey("end") ? Math.round(Double.parseDouble(q.get("end")) * 1000) : Long.MAX_VALUE;
         List<Map<String, String>> out = new ArrayList<>();
-        for (Map<String, String> labels : data.keySet()) {
-            if (matches(q.get("match[]"), labels)) {
-                out.add(labels);
+        try {
+            matches(q.get("match[]"), Map.of());
+            for (Map.Entry<Map<String, String>, TreeMap<Long, Double>> e : data.entrySet()) {
+                boolean inWindow;
+                synchronized (e.getValue()) {
+                    inWindow = !e.getValue().subMap(startMs, true, endMs, true).isEmpty();
+                }
+                if (inWindow && matches(q.get("match[]"), e.getKey())) {
+                    out.add(e.getKey());
+                }
             }
+        } catch (IllegalArgumentException unsupported) {
+            respond(ex, 400, unsupported.getMessage());
+            return;
         }
         respondJson(ex, out);
     }
@@ -149,6 +163,12 @@ public final class FakeBackend implements AutoCloseable {
         List<Map<String, Object>> result = new ArrayList<>();
         String selector = range.matches() ? range.group(1) : promql;
         long fromMs = range.matches() ? timeMs - Long.parseLong(range.group(2)) * 1000 : timeMs - 300_000;
+        try {
+            matches(selector, Map.of());
+        } catch (IllegalArgumentException unsupported) {
+            respond(ex, 400, unsupported.getMessage());
+            return;
+        }
         for (Map.Entry<Map<String, String>, TreeMap<Long, Double>> e : data.entrySet()) {
             if (!matches(selector, e.getKey())) {
                 continue;
@@ -166,7 +186,7 @@ public final class FakeBackend implements AutoCloseable {
             if (range.matches()) {
                 r.put("values", values);
             } else {
-                r.put("value", values.get(values.size() - 1));
+                r.put("value", List.of(timeMs / 1000.0, values.get(values.size() - 1).get(1)));
             }
             result.add(r);
         }
@@ -174,6 +194,12 @@ public final class FakeBackend implements AutoCloseable {
     }
 
     static boolean matches(String selector, Map<String, String> labels) {
+        int open = selector.indexOf('{');
+        int close = selector.lastIndexOf('}');
+        String body = open >= 0 && close > open ? selector.substring(open + 1, close) : "";
+        if (!MATCHER.matcher(body).replaceAll("").replaceAll("[\\s,]", "").isEmpty()) {
+            throw new IllegalArgumentException("unsupported matcher in " + selector);
+        }
         Matcher m = MATCHER.matcher(selector);
         boolean any = false;
         while (m.find()) {
