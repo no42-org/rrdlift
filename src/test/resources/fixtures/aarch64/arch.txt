@@ -1,0 +1,2 @@
+aarch64
+RRDtool 1.8.0  Copyright by Tobias Oetiker <tobi@oetiker.ch>

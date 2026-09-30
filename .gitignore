@@ -1,0 +1,8 @@
+# Java build
+/target/
+
+# AI tools
+_bmad-output/
+_bmad/
+openspec/
+.claude/settings.local.json
