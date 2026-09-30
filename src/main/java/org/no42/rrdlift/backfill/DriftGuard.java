@@ -5,6 +5,7 @@
 package org.no42.rrdlift.backfill;
 
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -33,12 +34,18 @@ public final class DriftGuard {
     private final PromClient client;
     private final int canary;
     private final long seed;
+    private final PrintStream out;
 
     public DriftGuard(Plan plan, PromClient client, int canary, long seed) {
+        this(plan, client, canary, seed, System.out);
+    }
+
+    public DriftGuard(Plan plan, PromClient client, int canary, long seed, PrintStream out) {
         this.plan = plan;
         this.client = client;
         this.canary = canary;
         this.seed = seed;
+        this.out = out;
     }
 
     public static void checkConfig(SnapshotInfo snapshot, MetaTagConfig current, boolean skip) throws DriftException {
@@ -74,12 +81,17 @@ public final class DriftGuard {
                     + " sampled series; rerun snapshot-labels and plan\n  "
                     + String.join("\n  ", differences.subList(0, Math.min(20, differences.size()))));
         }
-        int late = 0;
-        for (PlanEntry e : plan.entries()) {
-            if (e.entryClass() == EntryClass.PENDING && !series(e, start, nowSec).isEmpty()) {
-                late++;
+        int resolved = 0;
+        for (PlanEntry e : samplePending()) {
+            if (!series(e, start, nowSec).isEmpty()) {
+                resolved++;
             }
         }
+        if (resolved > 0) {
+            out.println(resolved + " pending resources now have a live series;"
+                    + " rerun snapshot-labels and plan after this backfill");
+        }
+        int late = 0;
         for (PlanEntry e : sampleOrphans()) {
             for (Map<String, String> live : liveSeries(e, start, nowSec)) {
                 if (!live.equals(e.labels())) {
@@ -104,6 +116,18 @@ public final class DriftGuard {
         return candidates.subList(0, Math.min(canary, candidates.size()));
     }
 
+    /** PENDING entries carry no labels; a sample of the canary size keeps the queries bounded. */
+    private List<PlanEntry> samplePending() {
+        List<PlanEntry> candidates = new ArrayList<>();
+        for (PlanEntry e : plan.entries()) {
+            if (e.entryClass() == EntryClass.PENDING) {
+                candidates.add(e);
+            }
+        }
+        Collections.shuffle(candidates, new Random(seed));
+        return candidates.subList(0, Math.min(canary, candidates.size()));
+    }
+
     private List<PlanEntry> sampleOrphans() {
         List<PlanEntry> candidates = new ArrayList<>();
         for (PlanEntry e : plan.entries()) {
@@ -120,8 +144,8 @@ public final class DriftGuard {
      * with a sample newer than the cutover count; its own earlier writes under older labels do not.
      */
     private List<Map<String, String>> liveSeries(PlanEntry e, long start, long nowSec) throws IOException {
-        if (plan.snapshot() == null) {
-            return series(e, start, nowSec);
+        if (plan.snapshot() == null || plan.snapshot().cutoverSec() <= 0) {
+            return series(e, start, nowSec); // no usable cutover: any series with a recent sample counts
         }
         long cutover = plan.snapshot().cutoverSec();
         String selector = Selectors.exact(Map.of("resourceId", Sanitizers.sanitizeLabelValue(e.resourceId()),
