@@ -191,6 +191,8 @@ The plugin stores them in the OpenNMS KV store.
 For matched resources they are already there.
 Orphans get none.
 
+Orphan label resolution, the PENDING class, drift checks, the labels report and `explain` are specified in `2026-09-30-rrdlift-labels-design.md`.
+
 ### 4. OpenNMS label export (optional, core change)
 
 Karaf command `opennms:tss-export-labels --in <orphans.txt> --out <labels.json>`.

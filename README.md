@@ -44,27 +44,60 @@ Use a moderate `--rate`, or prefer VictoriaMetrics or Mimir for very large repos
    ```
 4. Copy the live labels:
    ```
-   rrdlift snapshot-labels --rrd-dir /opt/opennms/share/rrd --read-url http://prometheus:9090
+   rrdlift snapshot-labels --rrd-dir /opt/opennms/share/rrd --read-url http://prometheus:9090 --opennms-home /opt/opennms
    ```
+   This also writes `labels-prometheus.meta.json` with the snapshot time, the cutover time and the meta-tag config hash.
 5. Plan, and read the report:
    ```
-   rrdlift plan --rrd-dir /opt/opennms/share/rrd --labels labels-prometheus.json
+   rrdlift plan --rrd-dir /opt/opennms/share/rrd --labels labels-prometheus.json \
+     --opennms-home /opt/opennms --opennms-url http://opennms:8980/opennms --opennms-password-file ~/.opennms-pass
    ```
-   `MATCHED` data sources join a live series.
-   `ORPHAN` data sources have no live series and get the minimal labels `__name__`, `resourceId`, `mtype`.
-   Pass `--skip-orphans` to leave them out.
-   `AMBIGUOUS` data sources match more than one live series and are skipped.
-   `MTYPE_MISMATCH` data sources match a live series whose `mtype` label contradicts the RRD data source type, and are skipped.
+   Every data source gets one class:
+   - `MATCHED` joins a live series.
+   - `PENDING` is still collected and waits for its live series.
+     It is not written.
+     Rerun `snapshot-labels` and `plan` after the time in `labels-report.html`.
+     It stays `PENDING` on every rerun until its live series appears.
+     `plan --no-pending` disables the rule.
+   - `ORPHAN_COMPLETE` has no live series and carries every configured meta tag.
+   - `ORPHAN_PARTIAL` has no live series and misses some tags.
+     The report lists them.
+     `--skip-partial` leaves these entries out.
+     With `storeByIfAlias`, node tags and categories come only from series in the same alias directory.
+     Otherwise they stay unresolved.
+   - `ORPHAN_MINIMAL` belongs to a node that no longer exists.
+     It gets the labels `__name__`, `resourceId`, `mtype`.
+     `--skip-orphans` leaves these entries out.
+   - `AMBIGUOUS` data sources match more than one live series and are skipped.
+   - `MTYPE_MISMATCH` data sources match a live series whose `mtype` label contradicts the RRD data source type, and are skipped.
+
+   `plan` writes `labels-report.html` next to `--out`.
+   `--report` changes the path.
+   Open `labels-report.html` before backfilling.
    `not-migrated.txt` lists every data source or file that will not be written, with its class and the reason.
+
+   `plan` and `backfill` exit 1 when `--opennms-home` is not a directory, when `--opennms-url` does not answer the OpenNMS REST API, or when the password is blank.
+   The password comes from `--opennms-password-file` or `RRDLIFT_OPENNMS_PASSWORD`, never from the command line.
 6. Backfill; rerun the same command to resume after an interruption:
    ```
-   rrdlift backfill --plan plan.json --write-url http://prometheus:9090/api/v1/write --rate 20000
+   rrdlift backfill --plan plan.json --write-url http://prometheus:9090/api/v1/write --read-url http://prometheus:9090 --opennms-home /opt/opennms --rate 20000
    ```
+   Before each pass backfill re-reads a sample of live series (`--canary`, default 50) and checks the meta-tag config.
+   It stops with exit 1 when either changed since the snapshot.
+   It also stops when a live series appeared for a planned orphan.
+   A series counts as live only with samples after the cutover, so rrdlift's own earlier writes do not trigger this.
+   `--canary 0` disables both canaries.
+   A `--canary` above 0 needs `--read-url`.
+   `--skip-config-check` skips the config check.
    After each run backfill reports how many planned files are done in both passes, counted from the checkpoint.
    Exit code 0 means every planned file is done in both passes.
    Exit code 1 means some files are not done yet, or the run aborted on a local error such as an unwritable state directory.
    A plain rerun does not retry failed files and still exits 1.
    Use `--retry-failed` to retry the failed files.
+   It retries failed files only.
+   Files whose planned labels changed are picked up by a plain `backfill` run.
+   Backfill rewrites them and logs how many.
+   Remote write cannot delete, so the series under the old labels remain in the backend.
    Exit code 2 means paused because the backend was unavailable.
    Every command exits 64 on invalid options.
 7. Verify:
@@ -85,6 +118,15 @@ Use a moderate `--rate`, or prefer VictoriaMetrics or Mimir for very large repos
    By default verify samples only 1% of files plus every file that needed a retry.
    Review `not-migrated.txt` before archiving or deleting `share/rrd`, because nothing listed there is in the backend.
    Until then `share/rrd` is your rollback path.
+
+## Explaining one series
+
+`rrdlift explain` prints the class, the labels and the source of each label for one resource.
+```
+rrdlift explain --plan plan.json snmp/1/eth0-0011/mib2-interfaces
+```
+Add `--ds <name>` to show one data source.
+It exits 1 when the resource is not in the plan.
 
 ## Build
 
