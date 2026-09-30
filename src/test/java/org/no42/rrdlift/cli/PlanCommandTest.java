@@ -29,12 +29,30 @@ class PlanCommandTest {
 
         int exit = Main.run("plan", "--no-pending", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
                 "--out", plan.toString(), "--orphans", orphans.toString(),
-                "--not-migrated", tmp.resolve("not-migrated.txt").toString());
+                "--not-migrated", tmp.resolve("not-migrated.txt").toString(),
+                "--report", tmp.resolve("explicit.html").toString());
 
         assertThat(exit).isZero();
+        assertThat(Files.readString(tmp.resolve("explicit.html"))).startsWith("<!doctype html>");
         assertThat(Plan.load(plan).entries()).hasSize(10);
         assertThat(Files.readAllLines(orphans)).containsExactly(
                 "response/10.0.0.1/icmp", "snmp/1/eth0-0011/mib2-interfaces", "snmp/fs/fs1/fid1/node-empty");
+    }
+
+    @Test
+    void writesReportNextToPlanByDefault(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp.resolve("rrd"));
+        Path labels = tmp.resolve("labels.json");
+        new LabelIndex().save(labels);
+        Path sub = Files.createDirectory(tmp.resolve("sub"));
+
+        int exit = Main.run("plan", "--no-pending", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
+                "--out", sub.resolve("plan.json").toString(), "--orphans", tmp.resolve("orphans.txt").toString(),
+                "--not-migrated", tmp.resolve("not-migrated.txt").toString());
+
+        assertThat(exit).isZero();
+        assertThat(Files.readString(sub.resolve("labels-report.html"))).startsWith("<!doctype html>");
+        assertThat(Path.of("labels-report.html")).doesNotExist();
     }
 
     @Test
