@@ -43,7 +43,7 @@ class CompletenessTest {
         Path labels = tmp.resolve("labels.json");
         new LabelIndex().save(labels);
         Path plan = tmp.resolve("plan.json");
-        assertThat(run("plan", "--rrd-dir", repo.toString(), "--labels", labels.toString(), "--out", plan.toString(),
+        assertThat(run("plan", "--no-pending", "--rrd-dir", repo.toString(), "--labels", labels.toString(), "--out", plan.toString(),
                 "--orphans", tmp.resolve("orphans.txt").toString(),
                 "--not-migrated", tmp.resolve("not-migrated.txt").toString()).exit()).isZero();
 

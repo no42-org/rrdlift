@@ -8,4 +8,5 @@ import org.no42.rrdlift.opennms.MetaTagConfig;
 import org.no42.rrdlift.opennms.OpennmsClient;
 
 /** Planner switches; config and rest may be null. */
-public record PlanOptions(boolean skipOrphans, boolean skipPartial, MetaTagConfig config, OpennmsClient rest) {}
+public record PlanOptions(boolean skipOrphans, boolean skipPartial, boolean pending, MetaTagConfig config,
+                          OpennmsClient rest) {}
