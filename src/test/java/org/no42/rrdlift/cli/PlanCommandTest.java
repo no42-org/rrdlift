@@ -54,7 +54,7 @@ class PlanCommandTest {
         java.util.List<String> lines = Files.readAllLines(notMigrated);
         assertThat(lines.get(0)).isEqualTo("# class\tresource\tds\tnote");
         assertThat(lines).contains("AMBIGUOUS\t" + eth0 + "\tifInOctets\t2 live label sets");
-        assertThat(lines).contains("ORPHAN\t" + eth0 + "\tifSpeed\tskipped by --skip-orphans");
+        assertThat(lines).contains("ORPHAN_PARTIAL\t" + eth0 + "\tifSpeed\tskipped by --skip-orphans");
         assertThat(lines).hasSize(11); // header + 10 unwritten entries
         assertThat(lines.subList(1, lines.size())).isSorted();
     }

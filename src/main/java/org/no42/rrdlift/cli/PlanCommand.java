@@ -16,9 +16,12 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import org.no42.rrdlift.labels.LabelIndex;
+import org.no42.rrdlift.labels.SnapshotInfo;
+import org.no42.rrdlift.opennms.MetaTagConfig;
 import org.no42.rrdlift.plan.EntryClass;
 import org.no42.rrdlift.plan.Plan;
 import org.no42.rrdlift.plan.PlanEntry;
+import org.no42.rrdlift.plan.PlanOptions;
 import org.no42.rrdlift.plan.Planner;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
@@ -40,6 +43,15 @@ public final class PlanCommand implements Callable<Integer> {
     @Option(names = "--skip-orphans", description = "Do not write data sources without a live or exported label set")
     boolean skipOrphans;
 
+    @Option(names = "--opennms-home", description = "OpenNMS home; its meta-tag config drives orphan labels")
+    Path opennmsHome;
+
+    @Option(names = "--skip-partial", description = "Do not write orphans with unresolved meta tags")
+    boolean skipPartial;
+
+    @Mixin
+    OpennmsOptions opennmsOptions;
+
     @Mixin
     ReaderOptions readerOptions;
 
@@ -60,7 +72,13 @@ public final class PlanCommand implements Callable<Integer> {
     public Integer call() {
         try {
             LabelIndex onms = opennmsLabels == null ? null : LabelIndex.load(opennmsLabels);
-            Plan plan = Planner.plan(rrdDir, readerOptions.opener(), LabelIndex.load(labels), onms, skipOrphans);
+            MetaTagConfig config = opennmsHome == null ? null : MetaTagConfig.load(opennmsHome);
+            Plan plan = Planner.plan(rrdDir, readerOptions.opener(), LabelIndex.load(labels), onms,
+                    new PlanOptions(skipOrphans, skipPartial, config, opennmsOptions.client()));
+            Path sidecar = SnapshotInfo.sidecarOf(labels);
+            if (Files.exists(sidecar)) {
+                plan = plan.withSnapshot(SnapshotInfo.load(sidecar));
+            }
             plan.save(out);
             TreeSet<String> orphanIds = new TreeSet<>();
             List<String> unwritten = new ArrayList<>();
