@@ -52,6 +52,33 @@ class SnapshotLabelsCommandTest {
     }
 
     @Test
+    void ignoresSeriesWithoutSamplesAfterTheCutover(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp.resolve("rrd"));
+        Path out = tmp.resolve("labels.json");
+        long cutover = SnapshotInfo.cutover(repo, new org.no42.rrdlift.rrd.RrdOpener(
+                org.no42.rrdlift.rrd.RrdOpener.Mode.NATIVE, null));
+        Map<String, String> rrdliftOwn = Map.of("__name__", "icmp", "resourceId", "response/10.0.0.1/icmp", "mtype", "gauge");
+        Map<String, String> live = Map.of("__name__", "ifInOctets", "resourceId", "snmp/1/eth0-0011/mib2-interfaces",
+                "mtype", "count", "node", "n1");
+        try (FakeBackend backend = FakeBackend.start()) {
+            PromClient client = new PromClient(backend.writeUrl(), backend.readUrl(), null);
+            client.write(List.of(
+                    new TimeSeries(rrdliftOwn, new long[] {(cutover - 300) * 1000, cutover * 1000}, new double[] {1, 2}),
+                    new TimeSeries(live, new long[] {(cutover - 10) * 1000, (cutover + 60) * 1000}, new double[] {1, 2})));
+
+            // a window that reaches back past the cutover, as with a large --since-days
+            int exit = Main.run("snapshot-labels", "--rrd-dir", repo.toString(), "--since-days", "36500",
+                    "--read-url", backend.readUrl().toString(), "--out", out.toString());
+
+            assertThat(exit).isZero();
+        }
+        LabelIndex index = LabelIndex.load(out);
+        assertThat(index.keys()).isEqualTo(1);
+        assertThat(index.lookup(new SeriesKey("snmp/1/eth0-0011/mib2-interfaces", "ifInOctets"))).containsExactly(live);
+        assertThat(index.lookup(new SeriesKey("response/10.0.0.1/icmp", "icmp"))).isEmpty();
+    }
+
+    @Test
     void failsWithExitCodeOneWhenBackendIsUnreachable(@TempDir Path tmp) throws Exception {
         Path repo = TestRepos.create(tmp.resolve("rrd"));
         int exit = Main.run("snapshot-labels", "--rrd-dir", repo.toString(),
