@@ -57,12 +57,18 @@ public final class SnapshotLabelsCommand implements Callable<Integer> {
             }
             PromClient client = connection.client();
             long now = System.currentTimeMillis() / 1000;
+            long cutover = SnapshotInfo.cutover(rrdDir, readerOptions.opener());
+            // rrdlift's own backfill writes samples up to the cutover, so only samples after it prove a live series
+            long start = now - sinceDays * 86400L;
+            if (cutover > 0) {
+                start = Math.max(start, cutover + 1);
+            }
             LabelIndex index = new LabelIndex();
             for (String prefix : prefixes) {
-                client.series(Selectors.resourcePrefix(prefix), now - sinceDays * 86400L, now + 1).forEach(index::add);
+                client.series(Selectors.resourcePrefix(prefix), start, now + 1).forEach(index::add);
             }
             MetaTagConfig config = opennmsHome == null ? null : MetaTagConfig.load(opennmsHome);
-            SnapshotInfo info = new SnapshotInfo(now, SnapshotInfo.cutover(rrdDir, readerOptions.opener()),
+            SnapshotInfo info = new SnapshotInfo(now, cutover,
                     connection.readUrl.toString(), config == null ? null : config.hash(),
                     config == null ? null : List.copyOf(config.expectedKeys()));
             index.save(out);

@@ -47,6 +47,9 @@ Use a moderate `--rate`, or prefer VictoriaMetrics or Mimir for very large repos
    rrdlift snapshot-labels --rrd-dir /opt/opennms/share/rrd --read-url http://prometheus:9090 --opennms-home /opt/opennms
    ```
    This also writes `labels-prometheus.meta.json` with the snapshot time, the cutover time and the meta-tag config hash.
+   Only series with samples after the cutover count as live, so a re-snapshot after a backfill ignores rrdlift's own series.
+   On VictoriaMetrics `/api/v1/series` is indexed by day, so orphans whose last sample is on the cutover's UTC day can still appear in a re-snapshot taken the same day.
+   Rerun `snapshot-labels` a day after the cutover.
 5. Plan, and read the report:
    ```
    rrdlift plan --rrd-dir /opt/opennms/share/rrd --labels labels-prometheus.json \
