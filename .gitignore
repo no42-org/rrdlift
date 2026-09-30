@@ -6,3 +6,6 @@ _bmad-output/
 _bmad/
 openspec/
 .claude/settings.local.json
+
+# Design docs stay local
+/docs/design/
