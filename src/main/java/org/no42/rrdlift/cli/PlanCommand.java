@@ -23,6 +23,7 @@ import org.no42.rrdlift.plan.Plan;
 import org.no42.rrdlift.plan.PlanEntry;
 import org.no42.rrdlift.plan.PlanOptions;
 import org.no42.rrdlift.plan.Planner;
+import org.no42.rrdlift.report.LabelsReport;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
@@ -71,6 +72,9 @@ public final class PlanCommand implements Callable<Integer> {
             description = "Tab-separated list of every data source or file that will not be written")
     Path notMigrated;
 
+    @Option(names = "--report", description = "Self-contained HTML label report (default: labels-report.html next to --out)")
+    Path report;
+
     @Override
     public Integer call() {
         try {
@@ -78,6 +82,7 @@ public final class PlanCommand implements Callable<Integer> {
             MetaTagConfig config = opennmsHome == null ? null : MetaTagConfig.load(opennmsHome);
             Plan plan = Planner.plan(rrdDir, readerOptions.opener(), LabelIndex.load(labels), onms,
                     new PlanOptions(skipOrphans, skipPartial, !noPending, config, opennmsOptions.client()));
+            Boolean configMatched = null;
             Path sidecar = SnapshotInfo.sidecarOf(labels);
             if (Files.exists(sidecar)) {
                 plan = plan.withSnapshot(SnapshotInfo.load(sidecar));
@@ -87,7 +92,12 @@ public final class PlanCommand implements Callable<Integer> {
                 System.err.println("plan: meta-tag config changed since the snapshot; rerun snapshot-labels");
                 return 1;
             }
+            if (plan.snapshot() != null && plan.snapshot().configHash() != null && config != null) {
+                configMatched = true;
+            }
             plan.save(out);
+            Path reportPath = report != null ? report : out.resolveSibling("labels-report.html");
+            LabelsReport.write(plan, config, configMatched, reportPath);
             TreeSet<String> orphanIds = new TreeSet<>();
             List<String> unwritten = new ArrayList<>();
             Map<EntryClass, Integer> counts = new EnumMap<>(EntryClass.class);
@@ -127,6 +137,7 @@ public final class PlanCommand implements Callable<Integer> {
                     samples, plan.oldestSampleSec() == 0 ? "none" : Instant.ofEpochSecond(plan.oldestSampleSec()),
                     rate, seconds / 3600, seconds % 3600 / 60);
             System.out.printf("  plan -> %s, orphans -> %s (%d resources)%n", out, orphans, orphanIds.size());
+            System.out.printf("  report -> %s%n", reportPath);
             System.out.printf("  not migrated -> %s (%d lines)%n", notMigrated, unwritten.size());
             return 0;
         } catch (Exception e) {
