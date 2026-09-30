@@ -18,7 +18,7 @@
     <picocli.version>4.7.7</picocli.version>
     <jrobin.version>1.6.0</jrobin.version>
     <jackson.version>2.22.1</jackson.version>
-    <protobuf.version>4.36.1</protobuf.version>
+    <protobuf.version>4.36.2</protobuf.version>
     <snappy.version>1.1.10.8</snappy.version>
     <junit.version>6.1.3</junit.version>
     <assertj.version>3.27.7</assertj.version>
