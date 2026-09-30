@@ -46,6 +46,12 @@ public final class LabelIndex {
         return byKey.values().stream().mapToInt(List::size).sum();
     }
 
+    public synchronized List<Map<String, String>> all() {
+        List<Map<String, String>> out = new ArrayList<>();
+        byKey.values().forEach(out::addAll);
+        return out;
+    }
+
     public synchronized void save(Path file) throws IOException {
         List<Map<String, String>> all = new ArrayList<>();
         byKey.values().forEach(all::addAll);
