@@ -6,6 +6,7 @@ package org.no42.rrdlift.cli;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -14,10 +15,14 @@ import org.junit.jupiter.api.io.TempDir;
 import org.no42.rrdlift.Main;
 import org.no42.rrdlift.labels.LabelIndex;
 import org.no42.rrdlift.labels.SeriesKey;
+import org.no42.rrdlift.labels.SnapshotInfo;
+import org.no42.rrdlift.opennms.MetaTagConfig;
 import org.no42.rrdlift.prom.FakeBackend;
 import org.no42.rrdlift.prom.PromClient;
 import org.no42.rrdlift.prom.TimeSeries;
 import org.no42.rrdlift.repo.TestRepos;
+import org.no42.rrdlift.rrd.Fixtures;
+import org.no42.rrdlift.rrd.NativeRrdtoolReader;
 
 class SnapshotLabelsCommandTest {
 
@@ -59,5 +64,42 @@ class SnapshotLabelsCommandTest {
         Path repo = TestRepos.create(tmp.resolve("rrd"));
         assertThat(Main.run("snapshot-labels", "--rrd-dir", repo.toString(),
                 "--out", tmp.resolve("x.json").toString())).isEqualTo(64);
+    }
+
+    @Test
+    void writesSidecarWithCutoverAndConfigHash(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp.resolve("rrd"));
+        Path home = tmp.resolve("opennms");
+        Files.createDirectories(home.resolve("etc"));
+        Files.writeString(home.resolve("etc/opennms.properties"),
+                "org.opennms.timeseries.tin.metatags.tag.node=${node:label}\n");
+        Path out = tmp.resolve("labels-prometheus.json");
+        try (FakeBackend backend = FakeBackend.start()) {
+            int exit = Main.run("snapshot-labels", "--rrd-dir", repo.toString(), "--read-url", backend.readUrl().toString(),
+                    "--out", out.toString(), "--opennms-home", home.toString());
+            assertThat(exit).isZero();
+        }
+        SnapshotInfo info = SnapshotInfo.load(tmp.resolve("labels-prometheus.meta.json"));
+        long newest = Math.max(NativeRrdtoolReader.read(Fixtures.path("aarch64", "grp.rrd")).lastUpdate(),
+                NativeRrdtoolReader.read(Fixtures.path("aarch64", "icmp.rrd")).lastUpdate());
+        assertThat(info.cutoverSec()).isEqualTo(newest);
+        assertThat(info.snapshotSec()).isCloseTo(System.currentTimeMillis() / 1000, org.assertj.core.data.Offset.offset(60L));
+        assertThat(info.configHash()).isEqualTo(MetaTagConfig.load(home).hash());
+        assertThat(info.expectedKeys()).containsExactly("node");
+        assertThat(info.backendUrl()).startsWith("http://127.0.0.1:");
+        assertThat(SnapshotInfo.sidecarOf(Path.of("x/labels"))).isEqualTo(Path.of("x/labels.meta.json"));
+    }
+
+    @Test
+    void missingOpennmsHomeFailsWithoutWritingAnyFile(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp.resolve("rrd"));
+        Path out = tmp.resolve("labels-prometheus.json");
+        try (FakeBackend backend = FakeBackend.start()) {
+            int exit = Main.run("snapshot-labels", "--rrd-dir", repo.toString(), "--read-url", backend.readUrl().toString(),
+                    "--out", out.toString(), "--opennms-home", tmp.resolve("nope").toString());
+            assertThat(exit).isEqualTo(1);
+        }
+        assertThat(out).doesNotExist();
+        assertThat(SnapshotInfo.sidecarOf(out)).doesNotExist();
     }
 }

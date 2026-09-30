@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -31,6 +32,9 @@ public record MetaTagConfig(Map<String, String> tags, boolean exposeCategories, 
 
     /** Reads etc/opennms.properties, then etc/opennms.properties.d/*.properties sorted by name; later values win. */
     public static MetaTagConfig load(Path opennmsHome) throws IOException {
+        if (!Files.isDirectory(opennmsHome)) {
+            throw new NoSuchFileException(opennmsHome.toString(), null, "not an OpenNMS home directory");
+        }
         Path etc = opennmsHome.resolve("etc");
         List<Path> files = new ArrayList<>();
         if (Files.isRegularFile(etc.resolve("opennms.properties"))) {
