@@ -54,6 +54,17 @@ public final class Backfiller {
     private final RateLimiter.Sleeper backoff;
     private final PrintStream log;
 
+    /** Runs before each pass; throwing stops the backfill before the pass writes anything. */
+    public interface PassGuard {
+        void beforePass(Pass pass) throws IOException;
+    }
+
+    private PassGuard passGuard = pass -> { };
+
+    public void setPassGuard(PassGuard guard) {
+        this.passGuard = guard;
+    }
+
     public Backfiller(PromClient client, RrdOpener opener, Checkpoint checkpoint, RateLimiter limiter, int threads,
                       int batchSamples, int maxRetries, RateLimiter.Sleeper backoff, PrintStream log) {
         this.client = client;
@@ -78,6 +89,7 @@ public final class Backfiller {
         int failed = 0;
         long samples = 0;
         for (Pass pass : List.of(Pass.RECENT, Pass.OLDER)) {
+            passGuard.beforePass(pass);
             Map<String, Checkpoint.Entry> state = checkpoint.load(pass.name());
             List<String> todo = order.stream().filter(f -> {
                 Checkpoint.Entry e = state.get(f);
@@ -87,6 +99,14 @@ public final class Backfiller {
                 return e == null || (e.status() == Checkpoint.Status.DONE && e.labelHash() != null
                         && !e.labelHash().equals(hashes.get(f)));
             }).toList();
+            long rewritten = todo.stream().filter(f -> {
+                Checkpoint.Entry e = state.get(f);
+                return e != null && e.status() == Checkpoint.Status.DONE;
+            }).count();
+            if (rewritten > 0) {
+                log.println("backfill: " + rewritten + " files rewritten because their planned labels changed;"
+                        + " series under the old labels remain in the backend");
+            }
             AtomicReference<String> pause = new AtomicReference<>();
             AtomicReference<Throwable> error = new AtomicReference<>();
             ExecutorService pool = Executors.newFixedThreadPool(Math.max(1, threads));

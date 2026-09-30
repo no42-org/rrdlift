@@ -56,7 +56,7 @@ final class Migration {
         assertThat(icmp.labels()).containsEntry("node", "n1");
 
         assertThat(Main.run("backfill", "--plan", planFile.toString(), "--write-url", w,
-                "--state-dir", tmp.toString(), "--rate", "0")).isZero();
+                "--state-dir", tmp.toString(), "--rate", "0", "--read-url", r)).isZero();
         flush.run();
 
         assertThat(Main.run("verify", "--plan", planFile.toString(), "--read-url", r,

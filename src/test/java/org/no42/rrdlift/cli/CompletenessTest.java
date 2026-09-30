@@ -50,7 +50,8 @@ class CompletenessTest {
         long lastUpdate = NativeRrdtoolReader.read(Fixtures.path("aarch64", "grp.rrd")).lastUpdate();
         try (FakeBackend backend = FakeBackend.start()) {
             String[] backfill = {"backfill", "--plan", plan.toString(), "--write-url", backend.writeUrl().toString(),
-                    "--state-dir", tmp.toString(), "--max-retries", "0", "--rate", "0"};
+                    "--state-dir", tmp.toString(), "--max-retries", "0", "--rate", "0",
+                    "--read-url", backend.readUrl().toString()};
             String[] verify = {"verify", "--plan", plan.toString(), "--read-url", backend.readUrl().toString(),
                     "--state-dir", tmp.toString()};
 

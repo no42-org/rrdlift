@@ -82,6 +82,11 @@ public final class PlanCommand implements Callable<Integer> {
             if (Files.exists(sidecar)) {
                 plan = plan.withSnapshot(SnapshotInfo.load(sidecar));
             }
+            if (plan.snapshot() != null && plan.snapshot().configHash() != null && config != null
+                    && !plan.snapshot().configHash().equals(config.hash())) {
+                System.err.println("plan: meta-tag config changed since the snapshot; rerun snapshot-labels");
+                return 1;
+            }
             plan.save(out);
             TreeSet<String> orphanIds = new TreeSet<>();
             List<String> unwritten = new ArrayList<>();

@@ -215,7 +215,11 @@ class BackfillerTest {
     void rewritesOnlyFilesWhoseLabelsChanged() throws Exception {
         backfiller(2000, 0).run(plan, false);
         Plan changed = relabel(plan, "icmp", "node", "renamed");
-        backfiller(2000, 0).run(changed, false);
+        java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+        new Backfiller(new PromClient(backend.writeUrl(), null, null), OPENER, new Checkpoint(tmp), new RateLimiter(0),
+                1, 2000, 0, n -> { }, new PrintStream(captured, true)).run(changed, false);
+        assertThat(captured.toString()).contains(
+                "1 files rewritten because their planned labels changed; series under the old labels remain in the backend");
 
         PlanEntry icmp = changed.entries().stream().filter(e -> "icmp".equals(e.dsName())).findFirst().orElseThrow();
         assertThat(backend.data().get(icmp.labels())).hasSize((int) icmp.samples());
