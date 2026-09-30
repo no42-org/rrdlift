@@ -70,16 +70,19 @@ Use a moderate `--rate`, or prefer VictoriaMetrics or Mimir for very large repos
      Otherwise they stay unresolved.
    - `ORPHAN_MINIMAL` belongs to a node that no longer exists.
      It gets the labels `__name__`, `resourceId`, `mtype`.
-     `--skip-orphans` leaves these entries out.
    - `AMBIGUOUS` data sources match more than one live series and are skipped.
    - `MTYPE_MISMATCH` data sources match a live series whose `mtype` label contradicts the RRD data source type, and are skipped.
+
+   `--skip-orphans` leaves out every `ORPHAN_*` class, not only `ORPHAN_MINIMAL`.
 
    `plan` writes `labels-report.html` next to `--out`.
    `--report` changes the path.
    Open `labels-report.html` before backfilling.
    `not-migrated.txt` lists every data source or file that will not be written, with its class and the reason.
 
-   `plan` and `backfill` exit 1 when `--opennms-home` is not a directory, when `--opennms-url` does not answer the OpenNMS REST API, or when the password is blank.
+   `plan`, `backfill` and `snapshot-labels` exit 1 when `--opennms-home` is not a directory.
+   Only `plan` has `--opennms-url` and the password options.
+   `plan` also exits 1 when the URL does not answer the OpenNMS REST API, or when the password is blank.
    The password comes from `--opennms-password-file` or `RRDLIFT_OPENNMS_PASSWORD`, never from the command line.
 6. Backfill; rerun the same command to resume after an interruption:
    ```
@@ -93,6 +96,8 @@ Use a moderate `--rate`, or prefer VictoriaMetrics or Mimir for very large repos
    A series counts as live only with samples after the cutover, so rrdlift's own earlier writes do not trigger this.
    `--canary 0` disables both canaries.
    A `--canary` above 0 needs `--read-url`.
+   This is a change from rrdlift 0.1, where `backfill` ran without `--read-url`.
+   Pass `--read-url`, or `--canary 0`.
    `--skip-config-check` skips the config check.
    After each run backfill reports how many planned files are done in both passes, counted from the checkpoint.
    Exit code 0 means every planned file is done in both passes.
@@ -103,6 +108,8 @@ Use a moderate `--rate`, or prefer VictoriaMetrics or Mimir for very large repos
    Files whose planned labels changed are picked up by a plain `backfill` run.
    Backfill rewrites them and logs how many.
    Remote write cannot delete, so the series under the old labels remain in the backend.
+   Checkpoint lines written by rrdlift 0.1 carry no label hash, so backfill never rewrites those files.
+   Delete `state/` to force a rewrite.
    Exit code 2 means paused because the backend was unavailable.
    Every command exits 64 on invalid options.
 7. Verify:

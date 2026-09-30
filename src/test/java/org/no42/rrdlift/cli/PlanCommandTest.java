@@ -93,4 +93,67 @@ class PlanCommandTest {
                 "--out", tmp.resolve("plan.json").toString(), "--opennms-home", home.toString(), "--no-rest");
         assertThat(exit).isEqualTo(1);
     }
+
+    static String stderrOf(String... args) {
+        java.io.PrintStream original = System.err;
+        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+        System.setErr(new java.io.PrintStream(buf, true, java.nio.charset.StandardCharsets.UTF_8));
+        try {
+            Main.run(args);
+            return buf.toString(java.nio.charset.StandardCharsets.UTF_8);
+        } finally {
+            System.setErr(original);
+        }
+    }
+
+    static Path homeWithNodeTag(Path tmp) throws Exception {
+        Path home = tmp.resolve("opennms");
+        Files.createDirectories(home.resolve("etc"));
+        Files.writeString(home.resolve("etc/opennms.properties"),
+                "org.opennms.timeseries.tin.metatags.tag.node=${node:label}\n");
+        return home;
+    }
+
+    @Test
+    void configMismatchFailsBeforeAnyNodeLookup(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp.resolve("rrd"));
+        Path labels = tmp.resolve("labels.json");
+        new LabelIndex().save(labels);
+        new SnapshotInfo(1, 1, null, "0".repeat(64), List.of()).save(SnapshotInfo.sidecarOf(labels));
+        Path pass = Files.writeString(tmp.resolve("pass"), "admin\n");
+        try (org.no42.rrdlift.opennms.FakeOpennms onms = org.no42.rrdlift.opennms.FakeOpennms.start()) {
+            onms.addNode(1, null, null, "n1", "dc", List.of(), java.util.Map.of());
+            String err = stderrOf("plan", "--no-pending", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
+                    "--out", tmp.resolve("plan.json").toString(), "--opennms-home", homeWithNodeTag(tmp).toString(),
+                    "--opennms-url", onms.url().toString(), "--opennms-password-file", pass.toString());
+            assertThat(err).contains("meta-tag config changed since the snapshot");
+            // the ping is fine, but the planner must not have looked up a single node
+            assertThat(onms.requests()).noneMatch(r -> r.contains("/nodes/1"));
+        }
+    }
+
+    @Test
+    void warnsWhenTheSnapshotRecordedAConfigButOpennmsHomeIsMissing(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp.resolve("rrd"));
+        Path labels = tmp.resolve("labels.json");
+        new LabelIndex().save(labels);
+        new SnapshotInfo(1, 1, null, "0".repeat(64), List.of("node")).save(SnapshotInfo.sidecarOf(labels));
+        String[] args = {"plan", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
+                "--out", tmp.resolve("plan.json").toString(), "--orphans", tmp.resolve("orphans.txt").toString(),
+                "--not-migrated", tmp.resolve("not-migrated.txt").toString()};
+        assertThat(Main.run(args)).isZero();
+        assertThat(stderrOf(args)).contains("warning: the snapshot recorded a meta-tag config;"
+                + " pass --opennms-home to resolve orphan tags and check it");
+    }
+
+    @Test
+    void omitsTheLegacyOrphanClassFromTheSummary(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp.resolve("rrd"));
+        Path labels = tmp.resolve("labels.json");
+        new LabelIndex().save(labels);
+        CompletenessTest.Run run = CompletenessTest.run("plan", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
+                "--out", tmp.resolve("plan.json").toString(), "--orphans", tmp.resolve("orphans.txt").toString(),
+                "--not-migrated", tmp.resolve("not-migrated.txt").toString());
+        assertThat(run.out()).contains("MATCHED 0").doesNotContain(" ORPHAN 0");
+    }
 }
