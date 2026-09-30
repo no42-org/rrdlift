@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -195,5 +196,36 @@ class BackfillerTest {
             assertThat(e.status()).isEqualTo(Checkpoint.Status.FAILED);
             assertThat(e.error()).isEqualTo("planned data source gone missing from file");
         }
+    }
+
+    static Plan relabel(Plan p, String ds, String key, String value) {
+        List<PlanEntry> entries = p.entries().stream().map(e -> {
+            if (!ds.equals(e.dsName()) || e.labels() == null) {
+                return e;
+            }
+            Map<String, String> labels = new TreeMap<>(e.labels());
+            labels.put(key, value);
+            return new PlanEntry(e.file(), e.resourceId(), e.dsName(), e.mtype(), e.entryClass(), labels, e.samples(),
+                    e.note(), e.labelSources(), e.candidates());
+        }).toList();
+        return new Plan(p.rrdDir(), p.createdAt(), p.oldestSampleSec(), entries, p.snapshot());
+    }
+
+    @Test
+    void rewritesOnlyFilesWhoseLabelsChanged() throws Exception {
+        backfiller(2000, 0).run(plan, false);
+        Plan changed = relabel(plan, "icmp", "node", "renamed");
+        java.io.ByteArrayOutputStream captured = new java.io.ByteArrayOutputStream();
+        new Backfiller(new PromClient(backend.writeUrl(), null, null), OPENER, new Checkpoint(tmp), new RateLimiter(0),
+                1, 2000, 0, n -> { }, new PrintStream(captured, true)).run(changed, false);
+        assertThat(captured.toString()).contains(
+                "1 files rewritten because their planned labels changed; series under the old labels remain in the backend");
+
+        PlanEntry icmp = changed.entries().stream().filter(e -> "icmp".equals(e.dsName())).findFirst().orElseThrow();
+        assertThat(backend.data().get(icmp.labels())).hasSize((int) icmp.samples());
+        List<String> recent = Files.readAllLines(tmp.resolve("state/RECENT.jsonl"));
+        assertThat(recent).filteredOn(l -> l.contains(icmp.file())).hasSize(2);
+        String grpFile = plan.entries().stream().filter(e -> "ifSpeed".equals(e.dsName())).findFirst().orElseThrow().file();
+        assertThat(recent).filteredOn(l -> l.contains(grpFile)).hasSize(1);
     }
 }

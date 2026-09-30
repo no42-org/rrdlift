@@ -47,7 +47,7 @@ final class Migration {
                 "--out", labels.toString())).isZero();
 
         Path planFile = tmp.resolve("plan.json");
-        assertThat(Main.run("plan", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
+        assertThat(Main.run("plan", "--no-pending", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
                 "--out", planFile.toString(), "--orphans", tmp.resolve("orphans.txt").toString(),
                 "--not-migrated", tmp.resolve("not-migrated.txt").toString())).isZero();
         Plan plan = Plan.load(planFile);
@@ -56,7 +56,7 @@ final class Migration {
         assertThat(icmp.labels()).containsEntry("node", "n1");
 
         assertThat(Main.run("backfill", "--plan", planFile.toString(), "--write-url", w,
-                "--state-dir", tmp.toString(), "--rate", "0")).isZero();
+                "--state-dir", tmp.toString(), "--rate", "0", "--read-url", r)).isZero();
         flush.run();
 
         assertThat(Main.run("verify", "--plan", planFile.toString(), "--read-url", r,

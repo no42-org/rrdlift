@@ -16,10 +16,14 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.Callable;
 import org.no42.rrdlift.labels.LabelIndex;
+import org.no42.rrdlift.labels.SnapshotInfo;
+import org.no42.rrdlift.opennms.MetaTagConfig;
 import org.no42.rrdlift.plan.EntryClass;
 import org.no42.rrdlift.plan.Plan;
 import org.no42.rrdlift.plan.PlanEntry;
+import org.no42.rrdlift.plan.PlanOptions;
 import org.no42.rrdlift.plan.Planner;
+import org.no42.rrdlift.report.LabelsReport;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
@@ -40,6 +44,18 @@ public final class PlanCommand implements Callable<Integer> {
     @Option(names = "--skip-orphans", description = "Do not write data sources without a live or exported label set")
     boolean skipOrphans;
 
+    @Option(names = "--opennms-home", description = "OpenNMS home; its meta-tag config drives orphan labels")
+    Path opennmsHome;
+
+    @Option(names = "--skip-partial", description = "Do not write orphans with unresolved meta tags")
+    boolean skipPartial;
+
+    @Option(names = "--no-pending", description = "Write resources still collected at cutover as orphans (not recommended)")
+    boolean noPending;
+
+    @Mixin
+    OpennmsOptions opennmsOptions;
+
     @Mixin
     ReaderOptions readerOptions;
 
@@ -56,12 +72,40 @@ public final class PlanCommand implements Callable<Integer> {
             description = "Tab-separated list of every data source or file that will not be written")
     Path notMigrated;
 
+    @Option(names = "--report", description = "Self-contained HTML label report (default: labels-report.html next to --out)")
+    Path report;
+
     @Override
     public Integer call() {
         try {
             LabelIndex onms = opennmsLabels == null ? null : LabelIndex.load(opennmsLabels);
-            Plan plan = Planner.plan(rrdDir, readerOptions.opener(), LabelIndex.load(labels), onms, skipOrphans);
+            MetaTagConfig config = opennmsHome == null ? null : MetaTagConfig.load(opennmsHome);
+            SnapshotInfo snapshot = null;
+            Path sidecar = SnapshotInfo.sidecarOf(labels);
+            if (Files.exists(sidecar)) {
+                snapshot = SnapshotInfo.load(sidecar);
+            }
+            Boolean configMatched = null;
+            if (snapshot != null && snapshot.configHash() != null) {
+                if (config == null) {
+                    System.err.println("warning: the snapshot recorded a meta-tag config;"
+                            + " pass --opennms-home to resolve orphan tags and check it");
+                } else if (!snapshot.configHash().equals(config.hash())) {
+                    System.err.println("plan: meta-tag config changed since the snapshot; rerun snapshot-labels");
+                    return 1;
+                } else {
+                    configMatched = true;
+                }
+            }
+            Plan plan = Planner.plan(rrdDir, readerOptions.opener(), LabelIndex.load(labels), onms,
+                    new PlanOptions(skipOrphans, skipPartial, !noPending, config, opennmsOptions.client(),
+                            snapshot == null ? 0 : snapshot.cutoverSec()));
+            if (snapshot != null) {
+                plan = plan.withSnapshot(snapshot);
+            }
             plan.save(out);
+            Path reportPath = report != null ? report : out.resolveSibling("labels-report.html");
+            LabelsReport.write(plan, config, configMatched, reportPath);
             TreeSet<String> orphanIds = new TreeSet<>();
             List<String> unwritten = new ArrayList<>();
             Map<EntryClass, Integer> counts = new EnumMap<>(EntryClass.class);
@@ -72,7 +116,7 @@ public final class PlanCommand implements Callable<Integer> {
                 if (e.resourceId() != null) {
                     byRoot.merge(e.resourceId().split("/")[0], 1, Integer::sum);
                 }
-                if (e.entryClass() == EntryClass.ORPHAN) {
+                if (e.entryClass().isOrphan()) {
                     orphanIds.add(e.resourceId());
                 }
                 if (e.labels() != null) {
@@ -92,6 +136,9 @@ public final class PlanCommand implements Callable<Integer> {
             System.out.printf("plan: %d files, %d entries%n", plan.writableByFile().size(), plan.entries().size());
             StringBuilder classes = new StringBuilder(" ");
             for (EntryClass c : EntryClass.values()) {
+                if (c == EntryClass.ORPHAN && !counts.containsKey(c)) {
+                    continue; // only plans written by rrdlift 0.1 have this class
+                }
                 classes.append(' ').append(c).append(' ').append(counts.getOrDefault(c, 0));
             }
             System.out.println(classes);
@@ -101,6 +148,7 @@ public final class PlanCommand implements Callable<Integer> {
                     samples, plan.oldestSampleSec() == 0 ? "none" : Instant.ofEpochSecond(plan.oldestSampleSec()),
                     rate, seconds / 3600, seconds % 3600 / 60);
             System.out.printf("  plan -> %s, orphans -> %s (%d resources)%n", out, orphans, orphanIds.size());
+            System.out.printf("  report -> %s%n", reportPath);
             System.out.printf("  not migrated -> %s (%d lines)%n", notMigrated, unwritten.size());
             return 0;
         } catch (Exception e) {

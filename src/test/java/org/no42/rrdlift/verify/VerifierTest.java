@@ -177,4 +177,22 @@ class VerifierTest {
                 .allMatch(m -> m.file().equals(icmp));
         assertThat(r.files()).isEqualTo(3);
     }
+
+    @Test
+    void staleLabelHashCountsAsNotDone() throws Exception {
+        List<PlanEntry> entries = plan.entries().stream().map(e -> {
+            if (!"icmp".equals(e.dsName()) || e.labels() == null) {
+                return e;
+            }
+            Map<String, String> labels = new TreeMap<>(e.labels());
+            labels.put("node", "renamed");
+            return new PlanEntry(e.file(), e.resourceId(), e.dsName(), e.mtype(), e.entryClass(), labels, e.samples(),
+                    e.note(), e.labelSources(), e.candidates());
+        }).toList();
+        Plan changed = new Plan(plan.rrdDir(), plan.createdAt(), plan.oldestSampleSec(), entries, plan.snapshot());
+        String icmpFile = entries.stream().filter(e -> "icmp".equals(e.dsName())).findFirst().orElseThrow().file();
+
+        assertThat(Verifier.completeness(plan, new Checkpoint(tmp)).notDone()).isEmpty();
+        assertThat(Verifier.completeness(changed, new Checkpoint(tmp)).notDone()).containsExactly(icmpFile);
+    }
 }
