@@ -7,5 +7,5 @@ _bmad/
 openspec/
 .claude/settings.local.json
 
-# Design docs stay local
-/docs/design/
+# Design docs and plans stay local
+/docs/
