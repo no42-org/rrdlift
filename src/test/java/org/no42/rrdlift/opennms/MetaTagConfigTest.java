@@ -5,8 +5,10 @@
 package org.no42.rrdlift.opennms;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -77,5 +79,13 @@ class MetaTagConfigTest {
                 P + "exposeCategories", "true"));
         assertThat(c.expectedKeys()).containsExactly("categories", "if_descr", "node");
         assertThat(c.scopes()).containsEntry("if-descr", TagScope.INTERFACE);
+    }
+
+    @Test
+    void nonexistentHomeIsRejected(@TempDir Path tmp) {
+        Path missing = tmp.resolve("nope");
+        assertThatThrownBy(() -> MetaTagConfig.load(missing))
+                .isInstanceOf(NoSuchFileException.class)
+                .hasMessageContaining(missing.toString());
     }
 }
