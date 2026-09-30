@@ -8,7 +8,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -92,12 +94,47 @@ class DriftGuardTest {
                 .hasMessageContaining("live labels changed since the snapshot for 1 sampled series");
     }
 
-    @Test
-    void lateLiveSeriesForPendingIsDetected() throws Exception {
-        PlanEntry pending = new PlanEntry("b.rrd", "snmp/1/eth1/mib2-interfaces", "ifInOctets", "count",
+    static PlanEntry pending(int n) {
+        return new PlanEntry("b" + n + ".rrd", "snmp/1/eth" + n + "/mib2-interfaces", "ifInOctets", "count",
                 EntryClass.PENDING, null, 1, "still written at cutover");
+    }
+
+    static String out(ByteArrayOutputStream buf) {
+        return buf.toString(StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void liveSeriesForPendingIsANoticeNotAStop() throws Exception {
         live(Map.of("__name__", "ifInOctets", "resourceId", "snmp/1/eth1/mib2-interfaces", "mtype", "count", "node", "n1"));
-        assertThatThrownBy(() -> new DriftGuard(plan(pending), client, 50, 1).checkLive(NOW))
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        assertThatCode(() -> new DriftGuard(plan(pending(1)), client, 50, 1, new PrintStream(buf, true))
+                .checkLive(NOW)).doesNotThrowAnyException();
+        assertThat(out(buf)).isEqualTo("1 pending resources now have a live series;"
+                + " rerun snapshot-labels and plan after this backfill" + System.lineSeparator());
+    }
+
+    @Test
+    void noNoticeWhenNoPendingResourceHasALiveSeries() throws Exception {
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        new DriftGuard(plan(pending(1)), client, 50, 1, new PrintStream(buf, true)).checkLive(NOW);
+        assertThat(out(buf)).isEmpty();
+    }
+
+    @Test
+    void pendingQueriesAreBoundedByTheCanarySize() throws Exception {
+        new DriftGuard(plan(pending(1), pending(2), pending(3), pending(4)), client, 2, 1,
+                new PrintStream(PrintStream.nullOutputStream())).checkLive(NOW);
+        assertThat(backend.requests()).filteredOn(r -> r.startsWith("GET series")).hasSize(2);
+    }
+
+    @Test
+    void pendingNoticeDoesNotHideAnOrphanStop() throws Exception {
+        live(Map.of("__name__", "ifInOctets", "resourceId", "snmp/1/eth1/mib2-interfaces", "mtype", "count", "node", "n1"));
+        client.write(List.of(new TimeSeries(ORPHAN_OLD, new long[] {(NOW - 120) * 1000, (NOW - 30) * 1000},
+                new double[] {1, 2})));
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        assertThatThrownBy(() -> new DriftGuard(plan(pending(1), orphan()), client, 50, 1, new PrintStream(buf, true))
+                .checkLive(NOW))
                 .isInstanceOf(DriftGuard.DriftException.class)
                 .hasMessageContaining("live series appeared for 1 planned orphans");
     }
@@ -125,6 +162,15 @@ class DriftGuardTest {
         assertThatThrownBy(() -> new DriftGuard(plan(orphan()), client, 50, 1).checkLive(NOW))
                 .isInstanceOf(DriftGuard.DriftException.class)
                 .hasMessageContaining("live series appeared for 1 planned orphans");
+    }
+
+    @Test
+    void snapshotCutoverZeroIsUnknownAndUsesTheSeriesEndpoint() throws Exception {
+        client.write(List.of(new TimeSeries(ORPHAN_OLD, new long[] {(NOW - 30) * 1000}, new double[] {1})));
+        Plan p = new Plan("rrd", NOW, 0, List.of(orphan()), new SnapshotInfo(NOW - 60, 0, null, null, null));
+        assertThatThrownBy(() -> new DriftGuard(p, client, 50, 1).checkLive(NOW))
+                .isInstanceOf(DriftGuard.DriftException.class);
+        assertThat(backend.requests()).noneMatch(r -> r.startsWith("GET query"));
     }
 
     @Test

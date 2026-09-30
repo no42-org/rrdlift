@@ -88,6 +88,8 @@ Use a moderate `--rate`, or prefer VictoriaMetrics or Mimir for very large repos
    Before each pass backfill re-reads a sample of live series (`--canary`, default 50) and checks the meta-tag config.
    It stops with exit 1 when either changed since the snapshot.
    It also stops when a live series appeared for a planned orphan.
+   A live series for a `PENDING` resource does not stop the backfill.
+   Backfill prints how many sampled pending resources now have one, so you can rerun `snapshot-labels` and `plan` after it.
    A series counts as live only with samples after the cutover, so rrdlift's own earlier writes do not trigger this.
    `--canary 0` disables both canaries.
    A `--canary` above 0 needs `--read-url`.
