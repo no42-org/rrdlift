@@ -31,6 +31,12 @@ public final class Planner {
 
     public static Plan plan(Path rrdDir, RrdOpener opener, LabelIndex live, LabelIndex opennms, boolean skipOrphans)
             throws IOException {
+        return plan(rrdDir, opener, live, opennms, new PlanOptions(skipOrphans, false, null, null));
+    }
+
+    public static Plan plan(Path rrdDir, RrdOpener opener, LabelIndex live, LabelIndex opennms, PlanOptions options)
+            throws IOException {
+        LabelResolver resolver = new LabelResolver(options.config(), live, options.rest());
         WalkResult walk = RepositoryWalker.walk(rrdDir);
         List<PlanEntry> entries = new ArrayList<>();
         long oldest = Long.MAX_VALUE;
@@ -63,26 +69,45 @@ public final class Planner {
                 EntryClass cls;
                 Map<String, String> labels = null;
                 String note = null;
+                Map<String, String> sources = null;
+                List<Map<String, String>> candidates = null;
                 if (matches.size() == 1) {
                     cls = EntryClass.MATCHED;
                     labels = matches.get(0);
+                    sources = allFrom(labels, "live");
                 } else if (matches.size() > 1) {
                     cls = EntryClass.AMBIGUOUS;
                     note = matches.size() + " live label sets";
+                    candidates = matches;
                 } else {
                     List<Map<String, String>> exported = opennms == null ? List.of() : opennms.lookup(key);
                     if (exported.size() == 1) {
                         cls = EntryClass.OPENNMS;
                         labels = exported.get(0);
+                        sources = allFrom(labels, "opennms-export");
                     } else if (exported.size() > 1) {
                         cls = EntryClass.AMBIGUOUS;
                         note = exported.size() + " exported label sets";
+                        candidates = exported;
                     } else {
-                        cls = EntryClass.ORPHAN;
-                        if (skipOrphans) {
-                            note = "skipped by --skip-orphans";
+                        LabelResolver.Result r = resolver.resolve(item.resourceId(), ds.name(), mtype);
+                        labels = r.labels();
+                        sources = r.sources();
+                        if (r.nodeGone()) {
+                            cls = EntryClass.ORPHAN_MINIMAL;
+                            note = "node not found in OpenNMS";
+                        } else if (r.unresolved().isEmpty()) {
+                            cls = EntryClass.ORPHAN_COMPLETE;
                         } else {
-                            labels = minimalLabels(item.resourceId(), ds.name(), mtype);
+                            cls = EntryClass.ORPHAN_PARTIAL;
+                            note = "unresolved: " + String.join(", ", r.unresolved());
+                        }
+                        if (options.skipOrphans()) {
+                            labels = null;
+                            note = "skipped by --skip-orphans";
+                        } else if (options.skipPartial() && cls == EntryClass.ORPHAN_PARTIAL) {
+                            labels = null;
+                            note = note + " (skipped by --skip-partial)";
                         }
                     }
                 }
@@ -91,17 +116,24 @@ public final class Planner {
                     note = "label mtype=" + labels.get("mtype") + ", RRD data source is " + ds.type();
                     cls = EntryClass.MTYPE_MISMATCH;
                     labels = null;
+                    sources = null;
                 }
                 Series s = series.get(ds.name());
                 if (labels != null && s != null && s.size() > 0) {
                     oldest = Math.min(oldest, s.timesMs()[0] / 1000);
                 }
                 entries.add(new PlanEntry(file, item.resourceId(), ds.name(), mtype, cls, labels,
-                        s == null ? 0 : s.size(), note));
+                        s == null ? 0 : s.size(), note, labels == null ? null : sources, candidates));
             }
         }
         return new Plan(rrdDir.toString(), System.currentTimeMillis() / 1000,
                 oldest == Long.MAX_VALUE ? 0 : oldest, List.copyOf(entries));
+    }
+
+    private static Map<String, String> allFrom(Map<String, String> labels, String source) {
+        Map<String, String> out = new TreeMap<>();
+        labels.keySet().forEach(k -> out.put(k, source));
+        return out;
     }
 
     public static Map<String, String> minimalLabels(String resourceId, String dsName, String mtype) {

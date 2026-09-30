@@ -56,7 +56,7 @@ class PlannerTest {
         assertThat(e.get(ETH0 + "|ifOutOctets").entryClass()).isEqualTo(EntryClass.OPENNMS);
         assertThat(e.get(ETH0 + "|ifOutOctets").labels()).containsEntry("node", "from-export");
         PlanEntry speed = e.get(ETH0 + "|ifSpeed");
-        assertThat(speed.entryClass()).isEqualTo(EntryClass.ORPHAN);
+        assertThat(speed.entryClass()).isEqualTo(EntryClass.ORPHAN_PARTIAL);
         assertThat(speed.labels()).containsExactlyInAnyOrderEntriesOf(
                 Map.of("__name__", "ifSpeed", "resourceId", ETH0, "mtype", "gauge"));
         assertThat(e.get(ETH0 + "|ifInErrors").labels()).containsEntry("mtype", "count");
@@ -89,9 +89,9 @@ class PlannerTest {
     void skipOrphansKeepsThemListedButUnwritable(@TempDir Path tmp) throws Exception {
         Plan plan = Planner.plan(TestRepos.create(tmp), OPENER, live(), null, true);
         PlanEntry speed = byName(plan).get(ETH0 + "|ifSpeed");
-        assertThat(speed.entryClass()).isEqualTo(EntryClass.ORPHAN);
+        assertThat(speed.entryClass()).isEqualTo(EntryClass.ORPHAN_PARTIAL);
         assertThat(speed.labels()).isNull();
-        assertThat(byName(plan).get(ETH0 + "|ifOutOctets").entryClass()).isEqualTo(EntryClass.ORPHAN);
+        assertThat(byName(plan).get(ETH0 + "|ifOutOctets").entryClass()).isEqualTo(EntryClass.ORPHAN_PARTIAL);
     }
 
     @Test
@@ -123,7 +123,7 @@ class PlannerTest {
                 .extracting(PlanEntry::resourceId).containsExactly("snmp/8/corrupt");
         assertThat(plan.entries()).filteredOn(p -> p.entryClass() == EntryClass.FAILED_READ)
                 .allSatisfy(p -> assertThat(p.note()).isNotBlank());
-        assertThat(plan.entries()).filteredOn(p -> p.entryClass() == EntryClass.ORPHAN).hasSize(10);
+        assertThat(plan.entries()).filteredOn(p -> p.entryClass() == EntryClass.ORPHAN_PARTIAL).hasSize(10);
     }
 
     @Test
