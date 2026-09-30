@@ -26,10 +26,10 @@ class BackfillCommandTest {
         try (FakeBackend backend = FakeBackend.start()) {
             backend.failNextWrites(100, 500);
             assertThat(Main.run("backfill", "--plan", planFile.toString(), "--write-url", backend.writeUrl().toString(),
-                    "--state-dir", tmp.toString(), "--max-retries", "0", "--rate", "0")).isEqualTo(2);
+                    "--state-dir", tmp.toString(), "--max-retries", "0", "--rate", "0", "--canary", "0")).isEqualTo(2);
             backend.failNextWrites(0, 500);
             assertThat(Main.run("backfill", "--plan", planFile.toString(), "--write-url", backend.writeUrl().toString(),
-                    "--state-dir", tmp.toString(), "--rate", "0")).isZero();
+                    "--state-dir", tmp.toString(), "--rate", "0", "--canary", "0")).isZero();
             assertThat(backend.data()).isNotEmpty();
         }
     }
@@ -47,5 +47,16 @@ class BackfillCommandTest {
         assertThat(Main.run("backfill", "--plan", planFile.toString(), "--write-url", "http://127.0.0.1:1/w",
                 "--threads", "0")).isEqualTo(64);
         assertThat(Main.run("backfill", "--plan", planFile.toString(), "--state-dir", tmp.toString())).isEqualTo(64);
+    }
+
+    @Test
+    void canaryNeedsReadUrl(@TempDir Path tmp) throws Exception {
+        Path planFile = tmp.resolve("plan.json");
+        Planner.plan(TestRepos.create(tmp.resolve("rrd")), new RrdOpener(RrdOpener.Mode.NATIVE, null),
+                new LabelIndex(), null, false).save(planFile);
+        assertThat(Main.run("backfill", "--plan", planFile.toString(), "--write-url", "http://127.0.0.1:1/w",
+                "--state-dir", tmp.toString())).isEqualTo(64);
+        assertThat(Main.run("backfill", "--plan", planFile.toString(), "--write-url", "http://127.0.0.1:1/w",
+                "--state-dir", tmp.toString(), "--canary", "-1")).isEqualTo(64);
     }
 }

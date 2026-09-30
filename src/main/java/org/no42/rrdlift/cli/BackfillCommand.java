@@ -10,7 +10,9 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import org.no42.rrdlift.backfill.Backfiller;
 import org.no42.rrdlift.backfill.Checkpoint;
+import org.no42.rrdlift.backfill.DriftGuard;
 import org.no42.rrdlift.backfill.RateLimiter;
+import org.no42.rrdlift.opennms.MetaTagConfig;
 import org.no42.rrdlift.plan.Plan;
 import org.no42.rrdlift.samples.Pass;
 import org.no42.rrdlift.verify.Verifier;
@@ -51,6 +53,15 @@ public final class BackfillCommand implements Callable<Integer> {
     @Option(names = "--state-dir", defaultValue = ".", description = "Directory for state/<pass>.jsonl")
     Path stateDir;
 
+    @Option(names = "--opennms-home", description = "OpenNMS home; checks the meta-tag config against the snapshot")
+    Path opennmsHome;
+
+    @Option(names = "--skip-config-check", description = "Do not compare the meta-tag config with the snapshot")
+    boolean skipConfigCheck;
+
+    @Option(names = "--canary", defaultValue = "50", description = "Live series re-read before each pass (0 disables)")
+    int canary;
+
     private static boolean isFailed(Checkpoint.Entry e) {
         return e != null && e.status() == Checkpoint.Status.FAILED;
     }
@@ -74,10 +85,22 @@ public final class BackfillCommand implements Callable<Integer> {
                 System.err.println("backfill: --threads must be at least 1");
                 return USAGE;
             }
+            if (canary < 0) {
+                System.err.println("backfill: --canary must be >= 0");
+                return USAGE;
+            }
+            if (canary > 0 && connection.readUrl == null) {
+                System.err.println("backfill: --read-url is required for the label canary (use --canary 0 to disable)");
+                return USAGE;
+            }
             Checkpoint checkpoint = new Checkpoint(stateDir);
             Backfiller backfiller = new Backfiller(connection.client(), readerOptions.opener(), checkpoint,
                     new RateLimiter(rate), threads, batchSamples, maxRetries, TimeUnit.NANOSECONDS::sleep, System.out);
             Plan p = Plan.load(plan);
+            DriftGuard.checkConfig(p.snapshot(), opennmsHome == null ? null : MetaTagConfig.load(opennmsHome),
+                    skipConfigCheck);
+            DriftGuard guard = new DriftGuard(p, connection.client(), canary, 1);
+            backfiller.setPassGuard(pass -> guard.checkLive(System.currentTimeMillis() / 1000));
             Backfiller.Outcome o = backfiller.run(p, retryFailed);
             if (o.paused()) {
                 System.out.printf("backfill: %d files done, %d failed, %d samples written, "
