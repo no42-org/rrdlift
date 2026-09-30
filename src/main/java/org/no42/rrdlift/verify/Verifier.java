@@ -19,6 +19,7 @@ import java.util.Set;
 import org.no42.rrdlift.backfill.Checkpoint;
 import org.no42.rrdlift.plan.EntryClass;
 import org.no42.rrdlift.plan.Plan;
+import org.no42.rrdlift.plan.LabelHash;
 import org.no42.rrdlift.plan.PlanEntry;
 import org.no42.rrdlift.prom.PromClient;
 import org.no42.rrdlift.prom.Selectors;
@@ -54,19 +55,22 @@ public final class Verifier {
     public static Completeness completeness(Plan plan, Checkpoint checkpoint) throws IOException {
         Map<String, Checkpoint.Entry> recent = checkpoint.load(Pass.RECENT.name());
         Map<String, Checkpoint.Entry> older = checkpoint.load(Pass.OLDER.name());
-        Set<String> files = plan.writableByFile().keySet();
-        List<String> notDone = files.stream().filter(f -> !done(recent.get(f)) || !done(older.get(f))).sorted().toList();
+        Map<String, List<PlanEntry>> writable = plan.writableByFile();
+        List<String> notDone = writable.keySet().stream().filter(f -> {
+            String hash = LabelHash.of(writable.get(f));
+            return !done(recent.get(f), hash) || !done(older.get(f), hash);
+        }).sorted().toList();
         Map<EntryClass, Integer> notMigrated = new EnumMap<>(EntryClass.class);
         for (PlanEntry e : plan.entries()) {
             if (e.labels() == null) {
                 notMigrated.merge(e.entryClass(), 1, Integer::sum);
             }
         }
-        return new Completeness(files.size(), notDone, notMigrated);
+        return new Completeness(writable.size(), notDone, notMigrated);
     }
 
-    private static boolean done(Checkpoint.Entry e) {
-        return e != null && e.status() == Checkpoint.Status.DONE;
+    private static boolean done(Checkpoint.Entry e, String hash) {
+        return e != null && e.status() == Checkpoint.Status.DONE && (e.labelHash() == null || e.labelHash().equals(hash));
     }
 
     public static List<String> select(Plan plan, Checkpoint checkpoint, boolean all, double percent, long seed)

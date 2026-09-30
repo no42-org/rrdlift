@@ -25,7 +25,14 @@ public final class Checkpoint {
 
     public enum Status { DONE, FAILED }
 
-    public record Entry(String file, String pass, Status status, long samples, int attempts, String error) {}
+    /** labelHash is null in lines written by rrdlift 0.1. */
+    public record Entry(String file, String pass, Status status, long samples, int attempts, String error,
+                        String labelHash) {
+
+        public Entry(String file, String pass, Status status, long samples, int attempts, String error) {
+            this(file, pass, status, samples, attempts, error, null);
+        }
+    }
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
