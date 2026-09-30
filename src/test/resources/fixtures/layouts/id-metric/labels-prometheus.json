@@ -1,0 +1,76 @@
+[
+ {
+  "__name__": "icmp",
+  "cat_Production": "Production",
+  "cat_Routers": "Routers",
+  "categories": "Production,Routers",
+  "env": "lab",
+  "geohash": "u33dc0cppjs7",
+  "location": "Default",
+  "mtype": "gauge",
+  "node": "router-a",
+  "resourceId": "response/172.31.74.11/icmp"
+ },
+ {
+  "__name__": "ifHCInOctets",
+  "cat_Production": "Production",
+  "cat_Routers": "Routers",
+  "categories": "Production,Routers",
+  "env": "lab",
+  "geohash": "u33dc0cppjs7",
+  "ifDescr": "eth0",
+  "location": "Default",
+  "mtype": "count",
+  "node": "router-a",
+  "resourceId": "snmp/2/eth0-02420a0b0202/mib2-X-interfaces"
+ },
+ {
+  "__name__": "ifHCOutOctets",
+  "cat_Production": "Production",
+  "cat_Routers": "Routers",
+  "categories": "Production,Routers",
+  "env": "lab",
+  "geohash": "u33dc0cppjs7",
+  "ifDescr": "eth0",
+  "location": "Default",
+  "mtype": "count",
+  "node": "router-a",
+  "resourceId": "snmp/2/eth0-02420a0b0202/mib2-X-interfaces"
+ },
+ {
+  "__name__": "loadavg1",
+  "cat_Production": "Production",
+  "cat_Routers": "Routers",
+  "categories": "Production,Routers",
+  "env": "lab",
+  "geohash": "u33dc0cppjs7",
+  "location": "Default",
+  "mtype": "gauge",
+  "node": "router-a",
+  "resourceId": "snmp/2/ucd-loadavg"
+ },
+ {
+  "__name__": "loadavg5",
+  "cat_Production": "Production",
+  "cat_Routers": "Routers",
+  "categories": "Production,Routers",
+  "env": "lab",
+  "geohash": "u33dc0cppjs7",
+  "location": "Default",
+  "mtype": "gauge",
+  "node": "router-a",
+  "resourceId": "snmp/2/ucd-loadavg"
+ },
+ {
+  "__name__": "loadavg15",
+  "cat_Production": "Production",
+  "cat_Routers": "Routers",
+  "categories": "Production,Routers",
+  "env": "lab",
+  "geohash": "u33dc0cppjs7",
+  "location": "Default",
+  "mtype": "gauge",
+  "node": "router-a",
+  "resourceId": "snmp/2/ucd-loadavg"
+ }
+]
