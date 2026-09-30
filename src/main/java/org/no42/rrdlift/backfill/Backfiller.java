@@ -70,7 +70,7 @@ public final class Backfiller {
         Map<String, List<PlanEntry>> files = plan.writableByFile();
         List<String> order = new ArrayList<>(files.keySet());
         order.sort(Comparator.comparing((String f) ->
-                files.get(f).stream().anyMatch(e -> e.entryClass() == EntryClass.ORPHAN)));
+                files.get(f).stream().anyMatch(e -> e.entryClass().isOrphan())));
         int done = 0;
         int failed = 0;
         long samples = 0;

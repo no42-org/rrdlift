@@ -72,7 +72,7 @@ public final class PlanCommand implements Callable<Integer> {
                 if (e.resourceId() != null) {
                     byRoot.merge(e.resourceId().split("/")[0], 1, Integer::sum);
                 }
-                if (e.entryClass() == EntryClass.ORPHAN) {
+                if (e.entryClass().isOrphan()) {
                     orphanIds.add(e.resourceId());
                 }
                 if (e.labels() != null) {
