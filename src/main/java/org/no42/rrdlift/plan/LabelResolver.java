@@ -17,6 +17,7 @@ import org.no42.rrdlift.labels.Sanitizers;
 import org.no42.rrdlift.opennms.MetaTagConfig;
 import org.no42.rrdlift.opennms.NodeExpressions;
 import org.no42.rrdlift.opennms.OpennmsClient;
+import org.no42.rrdlift.opennms.RrdLabels;
 import org.no42.rrdlift.opennms.TagScope;
 import org.no42.rrdlift.repo.RepositoryWalker;
 
@@ -33,6 +34,7 @@ public final class LabelResolver {
     private final SiblingIndex siblings;
     private final OpennmsClient rest;
     private final Map<String, NodeLookup> nodes = new HashMap<>();
+    private final Map<Integer, List<OpennmsClient.SnmpInterface>> snmp = new HashMap<>();
 
     public LabelResolver(MetaTagConfig config, LabelIndex live, OpennmsClient rest) {
         this.config = config;
@@ -122,6 +124,31 @@ public final class LabelResolver {
     /** The node behind a resource, via REST. Empty when REST is off, the node is gone or cannot be identified. */
     public Optional<OpennmsClient.NodeInfo> node(String resourceId) throws IOException {
         return Optional.ofNullable(lookupNode(resourceId).node());
+    }
+
+    /** True when REST lists the resource's SNMP interface with data collection enabled. */
+    public boolean scheduledForCollection(String resourceId) throws IOException {
+        if (rest == null || SiblingIndex.isAliased(resourceId)) {
+            return false;
+        }
+        Optional<String> label = interfaceLabel(resourceId);
+        Optional<OpennmsClient.NodeInfo> node = label.isEmpty() ? Optional.empty() : node(resourceId);
+        if (node.isEmpty()) {
+            return false;
+        }
+        List<OpennmsClient.SnmpInterface> ifs = snmp.get(node.get().id());
+        if (ifs == null) {
+            ifs = rest.snmpInterfaces(node.get().id());
+            snmp.put(node.get().id(), ifs);
+        }
+        boolean prefer = config != null && config.preferIfDescr();
+        boolean dont = config != null && config.dontSanitizeIfName();
+        for (OpennmsClient.SnmpInterface i : ifs) {
+            if (i.collect() && label.get().equals(RrdLabels.label(i.ifName(), i.ifDescr(), i.physAddr(), prefer, dont))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private NodeLookup lookupNode(String resourceId) throws IOException {

@@ -49,6 +49,9 @@ public final class PlanCommand implements Callable<Integer> {
     @Option(names = "--skip-partial", description = "Do not write orphans with unresolved meta tags")
     boolean skipPartial;
 
+    @Option(names = "--no-pending", description = "Write resources still collected at cutover as orphans (not recommended)")
+    boolean noPending;
+
     @Mixin
     OpennmsOptions opennmsOptions;
 
@@ -74,7 +77,7 @@ public final class PlanCommand implements Callable<Integer> {
             LabelIndex onms = opennmsLabels == null ? null : LabelIndex.load(opennmsLabels);
             MetaTagConfig config = opennmsHome == null ? null : MetaTagConfig.load(opennmsHome);
             Plan plan = Planner.plan(rrdDir, readerOptions.opener(), LabelIndex.load(labels), onms,
-                    new PlanOptions(skipOrphans, skipPartial, config, opennmsOptions.client()));
+                    new PlanOptions(skipOrphans, skipPartial, !noPending, config, opennmsOptions.client()));
             Path sidecar = SnapshotInfo.sidecarOf(labels);
             if (Files.exists(sidecar)) {
                 plan = plan.withSnapshot(SnapshotInfo.load(sidecar));

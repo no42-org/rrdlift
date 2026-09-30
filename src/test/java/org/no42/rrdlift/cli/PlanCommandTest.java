@@ -25,7 +25,7 @@ class PlanCommandTest {
         Path plan = tmp.resolve("plan.json");
         Path orphans = tmp.resolve("orphans.txt");
 
-        int exit = Main.run("plan", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
+        int exit = Main.run("plan", "--no-pending", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
                 "--out", plan.toString(), "--orphans", orphans.toString(),
                 "--not-migrated", tmp.resolve("not-migrated.txt").toString());
 
@@ -46,7 +46,7 @@ class PlanCommandTest {
         live.save(labels);
         Path notMigrated = tmp.resolve("not-migrated.txt");
 
-        int exit = Main.run("plan", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
+        int exit = Main.run("plan", "--no-pending", "--rrd-dir", repo.toString(), "--labels", labels.toString(),
                 "--out", tmp.resolve("plan.json").toString(), "--orphans", tmp.resolve("orphans.txt").toString(),
                 "--skip-orphans", "--not-migrated", notMigrated.toString());
 
