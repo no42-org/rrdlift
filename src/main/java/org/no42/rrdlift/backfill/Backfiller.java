@@ -20,6 +20,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.no42.rrdlift.plan.EntryClass;
+import org.no42.rrdlift.plan.LabelHash;
 import org.no42.rrdlift.plan.Plan;
 import org.no42.rrdlift.plan.PlanEntry;
 import org.no42.rrdlift.prom.PromClient;
@@ -68,6 +69,8 @@ public final class Backfiller {
 
     public Outcome run(Plan plan, boolean retryFailed) throws IOException, InterruptedException {
         Map<String, List<PlanEntry>> files = plan.writableByFile();
+        Map<String, String> hashes = new HashMap<>();
+        files.forEach((f, list) -> hashes.put(f, LabelHash.of(list)));
         List<String> order = new ArrayList<>(files.keySet());
         order.sort(Comparator.comparing((String f) ->
                 files.get(f).stream().anyMatch(e -> e.entryClass().isOrphan())));
@@ -78,7 +81,11 @@ public final class Backfiller {
             Map<String, Checkpoint.Entry> state = checkpoint.load(pass.name());
             List<String> todo = order.stream().filter(f -> {
                 Checkpoint.Entry e = state.get(f);
-                return retryFailed ? e != null && e.status() == Checkpoint.Status.FAILED : e == null;
+                if (retryFailed) {
+                    return e != null && e.status() == Checkpoint.Status.FAILED;
+                }
+                return e == null || (e.status() == Checkpoint.Status.DONE && e.labelHash() != null
+                        && !e.labelHash().equals(hashes.get(f)));
             }).toList();
             AtomicReference<String> pause = new AtomicReference<>();
             AtomicReference<Throwable> error = new AtomicReference<>();
@@ -90,7 +97,7 @@ public final class Backfiller {
                         return null;
                     }
                     try {
-                        return processFile(file, files.get(file), pass);
+                        return processFile(file, files.get(file), pass, hashes.get(file));
                     } catch (PauseException e) {
                         pause.compareAndSet(null, e.getMessage()); // before the next task on this thread starts
                         return null;
@@ -136,7 +143,8 @@ public final class Backfiller {
         return new Outcome(false, done, failed, samples, null);
     }
 
-    private Checkpoint.Entry processFile(String file, List<PlanEntry> entries, Pass pass) throws Exception {
+    private Checkpoint.Entry processFile(String file, List<PlanEntry> entries, Pass pass, String labelHash)
+            throws Exception {
         Map<String, Series> byDs = new HashMap<>();
         try {
             RrdFile rrd = opener.open(Path.of(file));
@@ -145,12 +153,12 @@ public final class Backfiller {
             }
         } catch (IOException | RuntimeException e) {
             String message = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            return record(file, pass, Checkpoint.Status.FAILED, 0, 1, "read: " + message);
+            return record(file, pass, Checkpoint.Status.FAILED, 0, 1, "read: " + message, labelHash);
         }
         for (PlanEntry e : entries) {
             if (!byDs.containsKey(e.dsName())) {
                 return record(file, pass, Checkpoint.Status.FAILED, 0, 1,
-                        "planned data source " + e.dsName() + " missing from file");
+                        "planned data source " + e.dsName() + " missing from file", labelHash);
             }
         }
         List<TimeSeries> batch = new ArrayList<>();
@@ -178,9 +186,9 @@ public final class Backfiller {
                 written += inBatch;
             }
         } catch (WriteException e) {
-            return record(file, pass, Checkpoint.Status.FAILED, written, attempts, "HTTP " + e.status() + ": " + e.body());
+            return record(file, pass, Checkpoint.Status.FAILED, written, attempts, "HTTP " + e.status() + ": " + e.body(), labelHash);
         }
-        return record(file, pass, Checkpoint.Status.DONE, written, attempts, null);
+        return record(file, pass, Checkpoint.Status.DONE, written, attempts, null, labelHash);
     }
 
     /** Returns the attempt number that succeeded. Throws WriteException for permanent errors. */
@@ -212,8 +220,8 @@ public final class Backfiller {
     }
 
     private Checkpoint.Entry record(String file, Pass pass, Checkpoint.Status status, long samples, int attempts,
-                                    String error) throws IOException {
-        Checkpoint.Entry e = new Checkpoint.Entry(file, pass.name(), status, samples, attempts, error);
+                                    String error, String labelHash) throws IOException {
+        Checkpoint.Entry e = new Checkpoint.Entry(file, pass.name(), status, samples, attempts, error, labelHash);
         checkpoint.append(e);
         return e;
     }
