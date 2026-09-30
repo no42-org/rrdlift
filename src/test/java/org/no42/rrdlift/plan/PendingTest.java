@@ -48,6 +48,24 @@ class PendingTest {
     }
 
     @Test
+    void snapshotCutoverReplacesThePlanLocalOne(@TempDir Path tmp) throws Exception {
+        Path repo = TestRepos.create(tmp);
+        long local = NativeRrdtoolReader.read(Fixtures.path("aarch64", "grp.rrd")).lastUpdate();
+        // the snapshot saw a cutover a day later, so nothing in this repository was written at it
+        Plan later = Planner.plan(repo, OPENER, new LabelIndex(), null,
+                new PlanOptions(false, false, true, null, null, local + 86400));
+        assertThat(later.entries()).noneMatch(e -> e.entryClass() == EntryClass.PENDING);
+        // a snapshot cutover just after the newest file keeps the entry pending and dates the rerun from it
+        Plan same = Planner.plan(repo, OPENER, new LabelIndex(), null,
+                new PlanOptions(false, false, true, null, null, local + 60));
+        assertThat(byName(same).get(ETH0 + "|ifSpeed").note()).endsWith(Instant.ofEpochSecond(local + 60 + 600).toString());
+        // 0 means unknown: the plan-local cutover applies
+        Plan unknown = Planner.plan(repo, OPENER, new LabelIndex(), null,
+                new PlanOptions(false, false, true, null, null, 0));
+        assertThat(byName(unknown).get(ETH0 + "|ifSpeed").note()).endsWith(Instant.ofEpochSecond(local + 600).toString());
+    }
+
+    @Test
     void ruleCanBeSwitchedOff(@TempDir Path tmp) throws Exception {
         Plan plan = Planner.plan(TestRepos.create(tmp), OPENER, new LabelIndex(), null,
                 new PlanOptions(false, false, false, null, null));

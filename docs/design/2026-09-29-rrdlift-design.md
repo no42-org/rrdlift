@@ -191,7 +191,7 @@ The plugin stores them in the OpenNMS KV store.
 For matched resources they are already there.
 Orphans get none.
 
-Orphan label resolution, the PENDING class, drift checks, the labels report and `explain` are specified in `2026-09-30-rrdlift-labels-design.md`.
+Orphan label resolution, the PENDING class, drift checks, the labels report and `explain` are described in the README sections on plan classes (Workflow step 5), backfill checks (Workflow step 6) and "Explaining one series".
 
 ### 4. OpenNMS label export (optional, core change)
 

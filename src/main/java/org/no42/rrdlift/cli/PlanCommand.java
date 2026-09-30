@@ -80,20 +80,28 @@ public final class PlanCommand implements Callable<Integer> {
         try {
             LabelIndex onms = opennmsLabels == null ? null : LabelIndex.load(opennmsLabels);
             MetaTagConfig config = opennmsHome == null ? null : MetaTagConfig.load(opennmsHome);
-            Plan plan = Planner.plan(rrdDir, readerOptions.opener(), LabelIndex.load(labels), onms,
-                    new PlanOptions(skipOrphans, skipPartial, !noPending, config, opennmsOptions.client()));
-            Boolean configMatched = null;
+            SnapshotInfo snapshot = null;
             Path sidecar = SnapshotInfo.sidecarOf(labels);
             if (Files.exists(sidecar)) {
-                plan = plan.withSnapshot(SnapshotInfo.load(sidecar));
+                snapshot = SnapshotInfo.load(sidecar);
             }
-            if (plan.snapshot() != null && plan.snapshot().configHash() != null && config != null
-                    && !plan.snapshot().configHash().equals(config.hash())) {
-                System.err.println("plan: meta-tag config changed since the snapshot; rerun snapshot-labels");
-                return 1;
+            Boolean configMatched = null;
+            if (snapshot != null && snapshot.configHash() != null) {
+                if (config == null) {
+                    System.err.println("warning: the snapshot recorded a meta-tag config;"
+                            + " pass --opennms-home to resolve orphan tags and check it");
+                } else if (!snapshot.configHash().equals(config.hash())) {
+                    System.err.println("plan: meta-tag config changed since the snapshot; rerun snapshot-labels");
+                    return 1;
+                } else {
+                    configMatched = true;
+                }
             }
-            if (plan.snapshot() != null && plan.snapshot().configHash() != null && config != null) {
-                configMatched = true;
+            Plan plan = Planner.plan(rrdDir, readerOptions.opener(), LabelIndex.load(labels), onms,
+                    new PlanOptions(skipOrphans, skipPartial, !noPending, config, opennmsOptions.client(),
+                            snapshot == null ? 0 : snapshot.cutoverSec()));
+            if (snapshot != null) {
+                plan = plan.withSnapshot(snapshot);
             }
             plan.save(out);
             Path reportPath = report != null ? report : out.resolveSibling("labels-report.html");
@@ -128,6 +136,9 @@ public final class PlanCommand implements Callable<Integer> {
             System.out.printf("plan: %d files, %d entries%n", plan.writableByFile().size(), plan.entries().size());
             StringBuilder classes = new StringBuilder(" ");
             for (EntryClass c : EntryClass.values()) {
+                if (c == EntryClass.ORPHAN && !counts.containsKey(c)) {
+                    continue; // only plans written by rrdlift 0.1 have this class
+                }
                 classes.append(' ').append(c).append(' ').append(counts.getOrDefault(c, 0));
             }
             System.out.println(classes);

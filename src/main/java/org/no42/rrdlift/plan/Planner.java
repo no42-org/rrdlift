@@ -117,8 +117,10 @@ public final class Planner {
                         sources, candidates));
             }
         }
+        // the snapshot's cutover is what the backend was snapshotted against; the local one is the fallback
+        long effectiveCutover = options.snapshotCutoverSec() > 0 ? options.snapshotCutoverSec() : cutover;
         for (Orphan o : orphans) {
-            PlanEntry e = classifyOrphan(o, resolver, options, cutover);
+            PlanEntry e = classifyOrphan(o, resolver, options, effectiveCutover);
             if (e.labels() != null) {
                 oldest = Math.min(oldest, o.firstSampleSec());
             }
